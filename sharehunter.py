@@ -46,7 +46,7 @@ def banner():
     /  |   |  \
    /   |   |   \     \\TARGET\SHARE  [Black] credentials.kdbx
   /_____________\    \\TARGET\SHARE  [Red]   unattend.xml
-  |  _________  |     \\TARGET\SHARE  [Yellow] web.config
+  |  _________  |    \\TARGET\SHARE  [Yellow] web.config
   | |         | |
   | |   SMB   | |
   | |_________| |
