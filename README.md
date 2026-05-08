@@ -177,7 +177,7 @@ Rules match on:
 - **Content** — regex scan of file contents for passwords, connection strings, API keys, tokens (files up to 512 KB, binary extensions skipped)
 - **Path** — directory path patterns
 
-49 filename/extension rules and 23 content rules are included.
+63 filename/extension rules and 49 content rules are included, sourced directly from Snaffler's default ruleset.
 
 ---
 
@@ -238,6 +238,6 @@ Python dependencies: `flask`, `flask-socketio`, `eventlet`, `impacket`, `ldap3`,
 | Session recovery | No | Yes — resume interrupted scans |
 | File download | No | Yes — in-browser, saved to loot dir |
 | Platform | Windows (or .NET on Linux) | Linux / any Python 3.10+ host |
-| Rule count | ~200+ | 72 (subset of highest-value rules) |
+| Rule count | ~200+ | 112 (63 filename + 49 content, full default ruleset) |
 
 The log file output format is identical so existing tooling and grep patterns work unchanged.

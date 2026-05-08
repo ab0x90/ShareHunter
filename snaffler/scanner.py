@@ -20,18 +20,13 @@ from impacket.nmb import NetBIOSError
 from impacket.smbconnection import SessionError
 
 from snaffler.rules import (
-    FILENAME_RULES, CONTENT_RULES, RATING_LABELS, ALL_RULES, SnaffleRule
+    FILENAME_RULES, CONTENT_RULES, RATING_LABELS, ALL_RULES, SnaffleRule,
+    SKIP_EXTENSIONS, should_skip_path,
 )
 from snaffler import session as sess
 
 # Max file size to read content from (bytes)
 MAX_CONTENT_SIZE = 512 * 1024   # 512 KB
-SKIP_EXTENSIONS = {
-    '.exe', '.dll', '.sys', '.mui', '.png', '.jpg', '.jpeg', '.gif',
-    '.bmp', '.ico', '.mp4', '.mp3', '.avi', '.mov', '.wmv', '.zip',
-    '.gz', '.tar', '.7z', '.rar', '.iso', '.img', '.lnk', '.ttf',
-    '.otf', '.woff', '.woff2', '.eot', '.pdf', '.msi', '.cab',
-}
 
 INTERESTING_SHARE_NAMES = re.compile(
     r'(?i)(backup|files?|data|share|users?|home|profiles?|'
@@ -217,6 +212,8 @@ class ShareHunter:
                 continue
 
             full_path = (path + '\\' + name).lstrip('\\')
+            if should_skip_path(full_path):
+                continue
             if f.is_directory():
                 self._walk_path(conn, host, share, '\\' + full_path, depth + 1)
             else:
@@ -233,15 +230,19 @@ class ShareHunter:
         # Filename/extension match first
         fn_rule = _match_filename(filename, path)
 
-        # Content match if file is readable and not a binary
+        # Content match + preview for any readable, non-binary file
         content_rule = None
         matched_line = ""
+        raw_text = ""
         if ext not in SKIP_EXTENSIONS and size > 0 and size < MAX_CONTENT_SIZE:
             try:
                 buf = []
                 conn.getFile(share, path, lambda d: buf.append(d))
                 data = b''.join(buf)
                 content_rule, matched_line = _match_content(data)
+                if not matched_line:
+                    # No content rule hit — grab first meaningful line as preview
+                    raw_text = data.decode('utf-8', errors='replace')
             except Exception:
                 pass
 
@@ -249,14 +250,20 @@ class ShareHunter:
         winner_rule = None
         if fn_rule and content_rule:
             winner_rule = fn_rule if fn_rule.rating <= content_rule.rating else content_rule
-            if content_rule.rating < fn_rule.rating:
-                matched_line = matched_line
-            else:
-                matched_line = ""
+            if content_rule.rating >= fn_rule.rating:
+                matched_line = ""  # filename rule won; fall through to preview below
         elif fn_rule:
             winner_rule = fn_rule
         elif content_rule:
             winner_rule = content_rule
+
+        # If filename rule won with no content match, show a file preview snippet
+        if winner_rule is fn_rule and not matched_line and raw_text:
+            for line in raw_text.splitlines():
+                stripped = line.strip()
+                if stripped:
+                    matched_line = stripped[:300]
+                    break
 
         if winner_rule is None:
             return
