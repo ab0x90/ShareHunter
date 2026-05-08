@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ShareHunter</title>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <style>
+    :root {
+      --bg:        #0d1117;
+      --bg2:       #161b22;
+      --bg3:       #21262d;
+      --border:    #30363d;
+      --text:      #c9d1d9;
+      --text-dim:  #8b949e;
+      --accent:    #58a6ff;
+      --black-clr: #6e40c9;
+      --red-clr:   #e74c3c;
+      --yellow-clr:#e3b341;
+      --green-clr: #3fb950;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 13px; }
+
+    /* ── Top bar ── */
+    header {
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    header h1 { font-size: 18px; color: var(--accent); letter-spacing: 1px; }
+    #status-badge {
+      padding: 3px 10px; border-radius: 12px;
+      font-size: 11px; font-weight: bold; letter-spacing: .5px;
+      background: var(--bg3); border: 1px solid var(--border);
+    }
+    #status-badge.running { background: #1c3a1c; border-color: var(--green-clr); color: var(--green-clr); }
+    #status-badge.idle    { background: var(--bg3); border-color: var(--border); color: var(--text-dim); }
+    #result-count { margin-left: auto; color: var(--text-dim); font-size: 12px; }
+
+    /* ── Session resume banner ── */
+    #session-banner {
+      display: none;
+      background: #1c2a3a;
+      border-bottom: 1px solid var(--accent);
+      padding: 10px 20px;
+      font-size: 12px;
+      color: var(--accent);
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    #session-banner.visible { display: flex; }
+    #session-banner select {
+      background: #0d1a27; border: 1px solid var(--accent);
+      color: var(--accent); padding: 4px 8px; border-radius: 4px;
+      font-family: inherit; font-size: 12px; min-width: 340px;
+      cursor: pointer;
+    }
+    #session-banner select:focus { outline: none; }
+    #session-banner button {
+      padding: 4px 14px; border-radius: 4px; border: 1px solid var(--accent);
+      background: #243545; color: var(--accent); cursor: pointer;
+      font-family: inherit; font-size: 12px; font-weight: 600;
+    }
+    #session-banner button:hover { background: #2e4a60; }
+    #session-banner .dismiss-btn {
+      margin-left: auto; background: none; border-color: var(--border);
+      color: var(--text-dim); font-weight: normal;
+    }
+
+    /* ── Tabs ── */
+    .tab-bar {
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      padding: 0 20px;
+    }
+    .tab-btn {
+      padding: 10px 20px; cursor: pointer;
+      border: none; background: none; color: var(--text-dim);
+      border-bottom: 2px solid transparent; font-size: 13px;
+      font-family: inherit; transition: color .15s, border-color .15s;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-content { display: none; height: calc(100vh - 110px); }
+    .tab-content.active { display: flex; flex-direction: column; }
+
+    /* ── Config panel (scan form) ── */
+    #scan-form {
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 20px;
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end;
+    }
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    .form-group label { font-size: 11px; color: var(--text-dim); }
+    .form-group input {
+      background: var(--bg3); border: 1px solid var(--border);
+      color: var(--text); padding: 5px 8px; border-radius: 4px;
+      font-family: inherit; font-size: 12px; width: 140px;
+    }
+    .form-group input:focus { outline: none; border-color: var(--accent); }
+    .form-group input[name=target] { width: 180px; }
+    button.btn {
+      padding: 6px 16px; border-radius: 4px; border: 1px solid;
+      cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 600;
+    }
+    .btn-start { background: #1c3a1c; border-color: var(--green-clr); color: var(--green-clr); }
+    .btn-start:hover { background: #2a552a; }
+    .btn-stop  { background: #3a1c1c; border-color: var(--red-clr); color: var(--red-clr); }
+    .btn-stop:hover { background: #552a2a; }
+    .btn-clear { background: var(--bg3); border-color: var(--border); color: var(--text-dim); }
+    .btn-clear:hover { border-color: var(--text-dim); }
+
+    /* ── Live tab ── */
+    #log-area {
+      flex: 1; overflow-y: auto; padding: 10px 20px;
+      font-size: 12px; line-height: 1.6;
+    }
+    .log-entry { padding: 1px 0; white-space: pre-wrap; word-break: break-all; }
+    .log-entry.result { color: var(--text); }
+    .log-entry.info   { color: var(--text-dim); }
+    .log-entry.error  { color: var(--red-clr); }
+    .log-entry.warn   { color: var(--yellow-clr); }
+    .rating-Black  { color: var(--black-clr); font-weight: bold; }
+    .rating-Red    { color: var(--red-clr);   font-weight: bold; }
+    .rating-Yellow { color: var(--yellow-clr);}
+    .rating-Green  { color: var(--green-clr); }
+
+    /* ── Results table (filter tab) ── */
+    #filter-bar {
+      background: var(--bg2); border-bottom: 1px solid var(--border);
+      padding: 10px 20px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    }
+    #filter-bar input, #filter-bar select {
+      background: var(--bg3); border: 1px solid var(--border);
+      color: var(--text); padding: 5px 8px; border-radius: 4px;
+      font-family: inherit; font-size: 12px;
+    }
+    #filter-bar input { width: 240px; }
+    #filter-bar input:focus, #filter-bar select:focus { outline: none; border-color: var(--accent); }
+    .rating-pills { display: flex; gap: 6px; }
+    .pill {
+      padding: 3px 10px; border-radius: 12px; cursor: pointer;
+      font-size: 11px; font-weight: bold; border: 2px solid transparent;
+      opacity: 0.4; transition: opacity .15s, border-color .15s;
+    }
+    .pill.active { opacity: 1; }
+    .pill-Black  { background: #2a1f45; border-color: var(--black-clr); color: var(--black-clr); }
+    .pill-Red    { background: #3a1c1c; border-color: var(--red-clr);   color: var(--red-clr);   }
+    .pill-Yellow { background: #3a2f10; border-color: var(--yellow-clr);color: var(--yellow-clr);}
+    .pill-Green  { background: #1c3a1c; border-color: var(--green-clr); color: var(--green-clr); }
+
+    #results-table-wrap { flex: 1; overflow: auto; padding: 0 20px 10px; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    thead { position: sticky; top: 0; background: var(--bg2); z-index: 1; }
+    th {
+      text-align: left; padding: 8px 10px; font-size: 11px;
+      color: var(--text-dim); border-bottom: 1px solid var(--border);
+      white-space: nowrap; cursor: pointer; user-select: none;
+      overflow: hidden;
+    }
+    th:hover { color: var(--text); }
+    th .sort-arrow { margin-left: 4px; opacity: .4; }
+    th.sorted .sort-arrow { opacity: 1; }
+    /* fixed column widths */
+    col.col-rating   { width: 72px; }
+    col.col-host     { width: 160px; }
+    col.col-share    { width: 100px; }
+    col.col-path     { width: 200px; }
+    col.col-data     { width: 280px; }
+    col.col-rule     { width: 130px; }
+    col.col-size     { width: 64px; }
+    col.col-modified { width: 130px; }
+    col.col-dl       { width: 90px; }
+    td {
+      padding: 5px 10px; border-bottom: 1px solid var(--border);
+      vertical-align: top; font-size: 12px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    /* Data column: wrap, no ellipsis */
+    td.td-data {
+      white-space: pre-wrap; word-break: break-all;
+      overflow: visible; text-overflow: unset;
+      font-size: 11px; color: var(--text-dim); line-height: 1.5;
+      max-height: 80px; overflow-y: auto;
+    }
+    tr:hover td { background: var(--bg2); }
+    .dl-btn {
+      background: #1c2a3a; border: 1px solid var(--accent); color: var(--accent);
+      padding: 3px 8px; border-radius: 4px; cursor: pointer;
+      font-size: 11px; font-family: inherit; white-space: nowrap;
+    }
+    .dl-btn:hover { background: #243545; }
+    .dl-btn:disabled { opacity: .4; cursor: default; }
+    .dl-btn.done {
+      border-color: var(--green-clr) !important;
+      color: var(--green-clr) !important;
+    }
+    .dl-btn.err {
+      border-color: var(--red-clr) !important;
+      color: var(--red-clr) !important;
+    }
+    .badge {
+      display: inline-block; padding: 1px 8px; border-radius: 10px;
+      font-size: 10px; font-weight: bold;
+    }
+    .badge-Black  { background: #2a1f45; color: var(--black-clr); }
+    .badge-Red    { background: #3a1c1c; color: var(--red-clr);   }
+    .badge-Yellow { background: #3a2f10; color: var(--yellow-clr);}
+    .badge-Green  { background: #1c3a1c; color: var(--green-clr); }
+
+    /* ── Detail modal ── */
+    #modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,.7); z-index: 100;
+      align-items: center; justify-content: center;
+    }
+    #modal-overlay.open { display: flex; }
+    #modal {
+      background: var(--bg2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 20px; max-width: 760px; width: 90%;
+      max-height: 80vh; overflow-y: auto;
+    }
+    #modal h2 { font-size: 14px; color: var(--accent); margin-bottom: 12px; }
+    #modal table { font-size: 12px; }
+    #modal td:first-child { color: var(--text-dim); width: 150px; padding-right: 12px; white-space: nowrap; }
+    #modal .close-btn {
+      float: right; background: none; border: none; color: var(--text-dim);
+      font-size: 18px; cursor: pointer; padding: 0 4px;
+    }
+    #modal .close-btn:hover { color: var(--text); }
+    #modal .match-box {
+      background: var(--bg3); border: 1px solid var(--border);
+      padding: 8px 12px; border-radius: 4px; font-size: 12px;
+      white-space: pre-wrap; word-break: break-all; margin-top: 6px;
+    }
+
+    /* ── Export button ── */
+    .btn-export { background: var(--bg3); border-color: var(--border); color: var(--accent); }
+    .btn-export:hover { border-color: var(--accent); }
+
+    /* scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>&#x1F50D; ShareHunter</h1>
+  <span id="status-badge" class="idle">IDLE</span>
+  <span id="result-count">0 findings</span>
+</header>
+
+<!-- Session resume banner (shown on GUI-only startup when sessions exist) -->
+<div id="session-banner">
+  <span style="font-weight:600;white-space:nowrap">&#x1F4BE; Prior session:</span>
+  <select id="session-select" title="Select a session to resume"></select>
+  <button onclick="resumeSession()">&#x21BA; Resume</button>
+  <button class="dismiss-btn" onclick="dismissBanner()">&#x2715;</button>
+</div>
+
+<!-- Tab bar -->
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('live')">Live Output</button>
+  <button class="tab-btn" onclick="switchTab('filter')">Filter Results</button>
+</div>
+
+<!-- ═══ LIVE TAB ═══ -->
+<div id="tab-live" class="tab-content active">
+  <!-- Scan form -->
+  <div id="scan-form">
+    <!-- Row 1: target mode toggle -->
+    <div class="form-group" style="flex-basis:100%;padding-bottom:4px;display:flex;align-items:center;gap:12px">
+      <label style="color:var(--text);font-size:12px;font-weight:600">Target mode:</label>
+      <label style="display:flex;align-items:center;gap:5px;cursor:pointer">
+        <input type="radio" name="target_mode" value="specific" checked onchange="toggleTargetMode()">
+        <span>Specific (-t)</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:5px;cursor:pointer">
+        <input type="radio" name="target_mode" value="domain" onchange="toggleTargetMode()">
+        <span>Domain enum (--target-domain)</span>
+      </label>
+    </div>
+    <!-- Specific target -->
+    <div class="form-group" id="fg-target">
+      <label>Target (IP / CIDR / hostname / file)</label>
+      <input type="text" name="target" placeholder="192.168.1.0/24">
+    </div>
+    <!-- Domain DC input — hidden until domain mode selected -->
+    <div class="form-group" id="fg-target-domain" style="display:none">
+      <label>DC hostname or IP</label>
+      <input type="text" name="target_domain" placeholder="dc01.corp.local">
+    </div>
+    <div class="form-group">
+      <label>Domain</label>
+      <input type="text" name="domain" placeholder="CORP">
+    </div>
+    <div class="form-group">
+      <label>Username</label>
+      <input type="text" name="username" placeholder="administrator">
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="text" name="password" placeholder="hunter2">
+    </div>
+    <div class="form-group">
+      <label>NT Hash (pass-the-hash)</label>
+      <input type="text" name="nthash" placeholder="optional">
+    </div>
+    <div class="form-group">
+      <label>Host Threads</label>
+      <input type="number" name="host_threads" value="5" min="1" max="50" style="width:70px" title="Concurrent hosts scanned at once">
+    </div>
+    <div class="form-group">
+      <label>Share Threads</label>
+      <input type="number" name="share_threads" value="10" min="1" max="50" style="width:70px" title="Concurrent shares per host">
+    </div>
+    <div class="form-group">
+      <label>Max Depth</label>
+      <input type="number" name="depth" value="10" min="1" max="30" style="width:70px">
+    </div>
+    <div style="display:flex;gap:8px;padding-top:17px">
+      <button class="btn btn-start" onclick="startScan()">&#x25B6; Start</button>
+      <button class="btn btn-stop"  onclick="stopScan()">&#x25A0; Stop</button>
+      <button class="btn btn-clear" onclick="clearLog()">&#x1F5D1; Clear</button>
+    </div>
+  </div>
+
+  <!-- Log stream -->
+  <div id="log-area"></div>
+</div>
+
+<!-- ═══ FILTER TAB ═══ -->
+<div id="tab-filter" class="tab-content">
+  <div id="filter-bar">
+    <input type="text" id="filter-text" placeholder="Search path, filename, match, rule…" oninput="applyFilters()">
+    <select id="filter-share" onchange="applyFilters()">
+      <option value="">All Shares</option>
+    </select>
+    <select id="filter-host" onchange="applyFilters()">
+      <option value="">All Hosts</option>
+    </select>
+    <div class="rating-pills">
+      <div class="pill pill-Black active"  data-rating="Black"  onclick="togglePill(this)">Black</div>
+      <div class="pill pill-Red active"    data-rating="Red"    onclick="togglePill(this)">Red</div>
+      <div class="pill pill-Yellow active" data-rating="Yellow" onclick="togglePill(this)">Yellow</div>
+      <div class="pill pill-Green active"  data-rating="Green"  onclick="togglePill(this)">Green</div>
+    </div>
+    <button class="btn btn-export" onclick="exportCSV()">&#x2B07; CSV</button>
+    <span id="filter-count" style="color:var(--text-dim);font-size:12px;margin-left:auto"></span>
+  </div>
+  <div id="results-table-wrap">
+    <table>
+      <colgroup>
+        <col class="col-rating">
+        <col class="col-host">
+        <col class="col-share">
+        <col class="col-path">
+        <col class="col-data">
+        <col class="col-rule">
+        <col class="col-size">
+        <col class="col-modified">
+        <col class="col-dl">
+      </colgroup>
+      <thead>
+        <tr>
+          <th onclick="sortBy('rating_label')" data-col="rating_label">Rating<span class="sort-arrow">&#x25B2;</span></th>
+          <th onclick="sortBy('host')"         data-col="host">Host<span class="sort-arrow">&#x25B2;</span></th>
+          <th onclick="sortBy('share')"        data-col="share">Share<span class="sort-arrow">&#x25B2;</span></th>
+          <th onclick="sortBy('path')"         data-col="path">Path<span class="sort-arrow">&#x25B2;</span></th>
+          <th>Matched Data</th>
+          <th onclick="sortBy('rule_name')"    data-col="rule_name">Rule<span class="sort-arrow">&#x25B2;</span></th>
+          <th onclick="sortBy('size')"         data-col="size">Size<span class="sort-arrow">&#x25B2;</span></th>
+          <th onclick="sortBy('modified')"     data-col="modified">Modified<span class="sort-arrow">&#x25B2;</span></th>
+          <th>Download</th>
+        </tr>
+      </thead>
+      <tbody id="results-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Detail modal -->
+<div id="modal-overlay" onclick="closeModal(event)">
+  <div id="modal">
+    <button class="close-btn" onclick="closeModal()">&#x2715;</button>
+    <h2>Finding Detail</h2>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<script>
+const socket = io();
+let allResults = [];
+let sortCol    = 'rating_label';
+let sortAsc    = true;
+const RATING_ORDER = { Black: 0, Red: 1, Yellow: 2, Green: 3 };
+
+// Persistent download state: unc_path -> { state: 'done'|'err', msg: '' }
+// Survives renderTable() calls and tab switches within the same page session.
+// On reload, /api/results annotates results with downloaded:true so we
+// rebuild this map from server state.
+const _dlState = new Map();
+
+// ── Polling fallback (works over SSH tunnels where WS events are lost) ─────
+let _pollInterval      = null;
+let _logOffset         = 0;
+let _wsWorking         = false;   // set true if WS actually delivers a result/log
+// Tracks how many results the SERVER currently holds for the active scan.
+// Separate from allResults.length because allResults may include historical
+// results loaded from a prior session file.
+let _serverResultCount = 0;
+
+function _mergePolledResults(data) {
+  // Detect scan restart: server result count went backwards (new scan started)
+  if (data.length < _serverResultCount) {
+    // New scan — clear display and start fresh
+    allResults = [];
+    _dlState.clear();
+    clearLog();
+    document.getElementById('results-tbody').innerHTML = '';
+    ['filter-host','filter-share'].forEach(id => {
+      const sel = document.getElementById(id);
+      while (sel.options.length > 1) sel.remove(1);
+    });
+    addLog('[*] New scan detected — display reset', 'info');
+  }
+
+  const newItems = data.slice(_serverResultCount);
+  _serverResultCount = data.length;
+
+  newItems.forEach(r => {
+    if (_dlState.has(r.unc_path)) { r.downloaded = true; r.local_path = _dlState.get(r.unc_path).local_path || ''; }
+    allResults.push(r);
+    addResultToLog(r);
+    updateFilterDropdowns(r);
+  });
+  if (newItems.length) {
+    updateCount();
+    if (document.getElementById('tab-filter').classList.contains('active')) applyFilters();
+  }
+}
+
+function startPolling() {
+  if (_pollInterval) return;
+  _pollInterval = setInterval(() => {
+    fetch('/api/status').then(r => r.json()).then(d => {
+      setStatus(d.running);
+      if (!d.running) stopPolling();
+    }).catch(() => {});
+
+    fetch('/api/results').then(r => r.json()).then(data => {
+      _mergePolledResults(data);
+    }).catch(() => {});
+
+    fetch('/api/logs').then(r => r.json()).then(logs => {
+      logs.slice(_logOffset).forEach(l => { if (l.level !== 'result') addLog(l.msg, l.level); });
+      _logOffset = logs.length;
+    }).catch(() => {});
+  }, 2500);
+}
+
+function stopPolling() {
+  if (!_pollInterval) return;
+  clearInterval(_pollInterval);
+  _pollInterval = null;
+}
+
+// ── Socket events ──────────────────────────────────────────────────────────
+socket.on('connect',    () => addLog('[WS] Connected to ShareHunter', 'info'));
+socket.on('disconnect', () => addLog('[WS] Disconnected', 'error'));
+
+socket.on('log', d => { _wsWorking = true; addLog(d.msg, d.level); });
+
+socket.on('new_result', r => {
+  _wsWorking = true;
+  // Annotate from persistent dl state before pushing
+  if (_dlState.has(r.unc_path)) {
+    r.downloaded  = true;
+    r.local_path  = _dlState.get(r.unc_path).local_path || '';
+  }
+  allResults.push(r);
+  addResultToLog(r);
+  updateCount();
+  updateFilterDropdowns(r);
+  if (document.getElementById('tab-filter').classList.contains('active')) {
+    applyFilters();
+  }
+});
+
+socket.on('scan_done', d => {
+  stopPolling();
+  setStatus(false);
+  addLog(`[✓] Scan finished — ${d.total} finding(s)`, 'info');
+});
+
+// ── UI helpers ─────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  document.querySelectorAll('.tab-btn')[name === 'live' ? 0 : 1].classList.add('active');
+  if (name === 'filter') applyFilters();
+}
+
+function setStatus(running) {
+  const b = document.getElementById('status-badge');
+  b.textContent = running ? 'RUNNING' : 'IDLE';
+  b.className   = running ? 'running' : 'idle';
+}
+
+function updateCount() {
+  document.getElementById('result-count').textContent = allResults.length + ' findings';
+}
+
+// ── Log area ───────────────────────────────────────────────────────────────
+function addLog(msg, level) {
+  const area = document.getElementById('log-area');
+  const div  = document.createElement('div');
+  div.className = 'log-entry ' + (level || 'info');
+  div.textContent = msg;
+  area.appendChild(div);
+  area.scrollTop = area.scrollHeight;
+}
+
+function addResultToLog(r) {
+  const area = document.getElementById('log-area');
+  const div  = document.createElement('div');
+  div.className = 'log-entry result';
+
+  const ratingSpan = document.createElement('span');
+  ratingSpan.className = 'rating-' + r.rating_label;
+  ratingSpan.textContent = '[' + r.rating_label + ']';
+
+  const rest = document.createElement('span');
+  const matchPart = r.matched_line ? `[${r.matched_line.substring(0,200)}]` : '';
+  rest.textContent = `(${r.rule_name})<${r.size}B>{\\\\${r.host}\\${r.share}\\${r.path}}${matchPart}`;
+
+  div.appendChild(ratingSpan);
+  div.appendChild(rest);
+  area.appendChild(div);
+  area.scrollTop = area.scrollHeight;
+}
+
+function clearLog() {
+  document.getElementById('log-area').innerHTML = '';
+}
+
+// ── Scan control ───────────────────────────────────────────────────────────
+function getFormVal(name) {
+  const el = document.querySelector(`[name=${name}]`);
+  return el ? el.value : '';
+}
+
+function toggleTargetMode() {
+  const mode = document.querySelector('input[name=target_mode]:checked').value;
+  document.getElementById('fg-target').style.display        = mode === 'specific' ? '' : 'none';
+  document.getElementById('fg-target-domain').style.display = mode === 'domain'   ? '' : 'none';
+}
+
+function startScan() {
+  const mode = document.querySelector('input[name=target_mode]:checked').value;
+  const payload = {
+    target:        mode === 'specific' ? getFormVal('target') : '',
+    target_domain: mode === 'domain'   ? getFormVal('target_domain') : '',
+    domain:        getFormVal('domain'),
+    username:      getFormVal('username'),
+    password:      getFormVal('password'),
+    nthash:        getFormVal('nthash'),
+    host_threads:  parseInt(getFormVal('host_threads'))  || 5,
+    share_threads: parseInt(getFormVal('share_threads')) || 10,
+    depth:         parseInt(getFormVal('depth'))         || 10,
+  };
+
+  const displayTarget = mode === 'domain'
+    ? `domain enum via ${payload.target_domain}`
+    : payload.target;
+
+  allResults = [];
+  _dlState.clear();
+  updateCount();
+  clearLog();
+  document.getElementById('results-tbody').innerHTML = '';
+  ['filter-host','filter-share'].forEach(id => {
+    const sel = document.getElementById(id);
+    while (sel.options.length > 1) sel.remove(1);
+  });
+  dismissBanner();
+
+  fetch('/api/start', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  }).then(r => r.json()).then(d => {
+    if (d.ok) {
+      setStatus(true);
+      addLog(`[*] Scan started → ${displayTarget}`, 'info');
+      startPolling();
+    } else {
+      addLog('[!] ' + d.error, 'error');
+    }
+  });
+}
+
+function stopScan() {
+  fetch('/api/stop', { method: 'POST' }).then(() => {
+    stopPolling();
+    setStatus(false);
+    addLog('[*] Stop requested', 'warn');
+  });
+}
+
+// ── Session banner ─────────────────────────────────────────────────────────
+function dismissBanner() {
+  document.getElementById('session-banner').classList.remove('visible');
+}
+
+function _fmtSession(s) {
+  const dt  = s.started_at ? s.started_at.replace('T', ' ').slice(0, 16) : '?';
+  const who = s.username   ? s.username + '@'                              : '';
+  const tgt = s.target     || '?';
+  const end = s.ended_at   ? '' : ' [incomplete]';
+  return `${dt}  ${who}${tgt}  — ${s.result_count} result(s)${end}`;
+}
+
+function showSessionBanner(sessions) {
+  if (!sessions.length) return;
+  const sel = document.getElementById('session-select');
+  sel.innerHTML = '';
+  sessions.forEach(s => {
+    const opt = new Option(_fmtSession(s), s.scan_id);
+    sel.add(opt);
+  });
+  document.getElementById('session-banner').classList.add('visible');
+}
+
+function resumeSession() {
+  const scan_id = document.getElementById('session-select').value;
+  dismissBanner();
+
+  allResults = [];
+  _dlState.clear();
+  updateCount();
+  clearLog();
+  document.getElementById('results-tbody').innerHTML = '';
+  ['filter-host','filter-share'].forEach(id => {
+    const sel = document.getElementById(id);
+    while (sel.options.length > 1) sel.remove(1);
+  });
+
+  fetch('/api/session-resume', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ scan_id }),
+  }).then(r => r.json()).then(d => {
+    if (!d.ok) { addLog('[!] Resume failed: ' + d.error, 'error'); return; }
+
+    Object.entries(d.downloads || {}).forEach(([unc, info]) => {
+      _dlState.set(unc, { state: 'done', local_path: info.local_path || '' });
+    });
+
+    allResults = (d.results || []).map(r => {
+      if (_dlState.has(r.unc_path)) {
+        r.downloaded = true;
+        r.local_path = _dlState.get(r.unc_path).local_path || '';
+      }
+      return r;
+    });
+
+    allResults.forEach(r => { addResultToLog(r); updateFilterDropdowns(r); });
+    updateCount();
+
+    // _serverResultCount = how many results the server currently holds for this scan.
+    // The poll will slice from this offset so only NEW results get appended to the display.
+    _serverResultCount = allResults.length;
+    _logOffset = 0;
+
+    if (d.resuming) {
+      addLog(`[✓] Session loaded — ${allResults.length} prior result(s). Resuming scan against ${d.pending} pending host(s)…`, 'info');
+      setStatus(true);
+    } else if (d.live) {
+      addLog(`[✓] Synced live scan — ${allResults.length} result(s) so far`, 'info');
+      setStatus(true);
+    } else {
+      addLog(`[✓] Session loaded — ${allResults.length} result(s). All hosts completed.`, 'info');
+      setStatus(false);
+    }
+    stopPolling();
+    startPolling();
+  });
+}
+
+// ── Filter tab ─────────────────────────────────────────────────────────────
+const activePills = new Set(['Black', 'Red', 'Yellow', 'Green']);
+
+function togglePill(el) {
+  const r = el.dataset.rating;
+  if (activePills.has(r)) { activePills.delete(r); el.classList.remove('active'); }
+  else                     { activePills.add(r);    el.classList.add('active');   }
+  applyFilters();
+}
+
+function updateFilterDropdowns(r) {
+  const hostSel  = document.getElementById('filter-host');
+  const shareSel = document.getElementById('filter-share');
+  const hosts  = [...hostSel.options].map(o => o.value);
+  const shares = [...shareSel.options].map(o => o.value);
+  if (!hosts.includes(r.host))  { const o = new Option(r.host, r.host);   hostSel.add(o); }
+  if (!shares.includes(r.share)){ const o = new Option(r.share, r.share); shareSel.add(o); }
+}
+
+function applyFilters() {
+  const text  = document.getElementById('filter-text').value.toLowerCase();
+  const host  = document.getElementById('filter-host').value;
+  const share = document.getElementById('filter-share').value;
+
+  let filtered = allResults.filter(r => {
+    if (!activePills.has(r.rating_label)) return false;
+    if (host  && r.host  !== host)  return false;
+    if (share && r.share !== share) return false;
+    if (text) {
+      const haystack = (r.path + r.filename + r.matched_line + r.rule_name + r.rule_desc).toLowerCase();
+      if (!haystack.includes(text)) return false;
+    }
+    return true;
+  });
+
+  // Sort
+  filtered.sort((a, b) => {
+    let av = a[sortCol], bv = b[sortCol];
+    if (sortCol === 'rating_label') { av = RATING_ORDER[av] ?? 99; bv = RATING_ORDER[bv] ?? 99; }
+    if (typeof av === 'number') return sortAsc ? av - bv : bv - av;
+    av = String(av); bv = String(bv);
+    return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+  });
+
+  document.getElementById('filter-count').textContent = filtered.length + ' rows';
+  renderTable(filtered);
+}
+
+// Registry so download buttons can look up their result object by index
+// without embedding JSON in HTML attributes (which breaks on special chars).
+// Rebuilt each renderTable; _dlState is the durable map that persists across renders.
+const _dlRegistry = [];
+
+function renderTable(rows) {
+  const tbody = document.getElementById('results-tbody');
+  tbody.innerHTML = '';
+  _dlRegistry.length = 0;
+
+  for (const r of rows) {
+    const idx = _dlRegistry.length;
+    _dlRegistry.push(r);
+
+    const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+    tr.onclick = (e) => { if (!e.target.closest('.dl-btn')) showModal(r); };
+
+    const dataText = r.matched_line
+      ? r.matched_line.substring(0, 300) + (r.matched_line.length > 300 ? '…' : '')
+      : '';
+
+    // Determine download button state from durable _dlState map
+    const dlInfo     = _dlState.get(r.unc_path);
+    const isDone     = dlInfo && dlInfo.state === 'done';
+    const isErr      = dlInfo && dlInfo.state === 'err';
+    const btnClass   = isDone ? 'dl-btn done' : (isErr ? 'dl-btn err' : 'dl-btn');
+    const btnLabel   = isDone ? '&#x2713; Got' : (isErr ? '&#x26A0; Err' : '&#x2B07; Get');
+    const btnTitle   = isErr  ? esc(dlInfo.msg || '') : (isDone ? esc(dlInfo.local_path || '') : '');
+    const btnDisabled = isDone ? 'disabled' : '';
+
+    tr.innerHTML = `
+      <td><span class="badge badge-${esc(r.rating_label)}">${esc(r.rating_label)}</span></td>
+      <td title="${esc(r.host)}">${esc(r.host)}</td>
+      <td title="${esc(r.share)}">${esc(r.share)}</td>
+      <td title="${esc(r.path)}">${esc(r.path)}</td>
+      <td class="td-data">${esc(dataText)}</td>
+      <td title="${esc(r.rule_desc)}">${esc(r.rule_name)}</td>
+      <td>${fmtSize(r.size)}</td>
+      <td>${esc(r.modified)}</td>
+      <td><button class="${btnClass}" data-idx="${idx}" title="${btnTitle}" ${btnDisabled}>${btnLabel}</button></td>
+    `;
+    tbody.appendChild(tr);
+  }
+
+  // Attach click handlers after DOM insertion
+  tbody.querySelectorAll('.dl-btn:not([disabled])').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const r = _dlRegistry[parseInt(btn.dataset.idx)];
+      downloadFile(btn, r);
+    });
+  });
+}
+
+function downloadFile(btn, r) {
+  btn.disabled    = true;
+  btn.textContent = '…';
+
+  fetch('/api/download', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ host: r.host, share: r.share, path: r.path, filename: r.filename }),
+  }).then(resp => {
+    if (!resp.ok) {
+      return resp.json().then(d => { throw new Error(d.error || resp.statusText); });
+    }
+    const cd    = resp.headers.get('Content-Disposition') || '';
+    const match = cd.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+    const fname = match ? match[1].replace(/['"]/g, '') : r.filename;
+    return resp.blob().then(blob => ({ blob, fname }));
+  }).then(({ blob, fname }) => {
+    const url = URL.createObjectURL(blob);
+    const a   = document.createElement('a');
+    a.href    = url;
+    a.download = fname;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    // Record in durable state map
+    _dlState.set(r.unc_path, { state: 'done', local_path: '' });
+
+    btn.innerHTML           = '&#x2713; Got';
+    btn.className           = 'dl-btn done';
+    btn.disabled            = true;
+  }).catch(err => {
+    // Record error in durable state so re-renders show the error
+    _dlState.set(r.unc_path, { state: 'err', msg: err.message });
+
+    btn.disabled  = false;
+    btn.innerHTML = '&#x26A0; Err';
+    btn.className = 'dl-btn err';
+    btn.title     = err.message;
+    console.error('Download failed:', err);
+  });
+}
+
+function sortBy(col) {
+  if (sortCol === col) sortAsc = !sortAsc;
+  else { sortCol = col; sortAsc = true; }
+  document.querySelectorAll('th').forEach(th => {
+    th.classList.toggle('sorted', th.dataset.col === col);
+    const arrow = th.querySelector('.sort-arrow');
+    if (arrow) arrow.textContent = (th.dataset.col === col && !sortAsc) ? '▼' : '▲';
+  });
+  applyFilters();
+}
+
+// ── Modal ──────────────────────────────────────────────────────────────────
+function showModal(r) {
+  const body = document.getElementById('modal-body');
+  const rows = [
+    ['Rating',    `<span class="badge badge-${r.rating_label}">${r.rating_label}</span>`],
+    ['Rule',      esc(r.rule_name)],
+    ['Rule Desc', esc(r.rule_desc)],
+    ['Match Type',esc(r.match_type)],
+    ['Host',      esc(r.host)],
+    ['Share',     esc(r.share)],
+    ['UNC Path',  esc(r.unc_path)],
+    ['Size',      fmtSize(r.size)],
+    ['Modified',  esc(r.modified)],
+    ['Detected',  esc(r.timestamp)],
+  ];
+  let html = '<table>' + rows.map(([k,v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('') + '</table>';
+  if (r.matched_line) {
+    html += `<br><strong style="color:var(--text-dim);font-size:11px">MATCHED CONTENT</strong>
+             <div class="match-box">${esc(r.matched_line)}</div>`;
+  }
+  body.innerHTML = html;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function closeModal(e) {
+  if (!e || e.target === document.getElementById('modal-overlay') || e.currentTarget.classList.contains('close-btn')) {
+    document.getElementById('modal-overlay').classList.remove('open');
+  }
+}
+
+// ── Export ─────────────────────────────────────────────────────────────────
+function exportCSV() {
+  const cols = ['rating_label','host','share','path','filename','size','modified','rule_name','rule_desc','match_type','matched_line'];
+  const header = cols.join(',');
+  const rows = allResults.map(r =>
+    cols.map(c => '"' + String(r[c] ?? '').replace(/"/g,'""') + '"').join(',')
+  );
+  const blob = new Blob([header + '\n' + rows.join('\n')], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'sharehunter_results.csv';
+  a.click();
+}
+
+// ── Utils ──────────────────────────────────────────────────────────────────
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function fmtSize(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n/1024).toFixed(1) + ' KB';
+  return (n/1048576).toFixed(1) + ' MB';
+}
+
+// ── On load: show session picker only when GUI started with no credentials ──
+// "No credentials" = no scan running and no results already in memory,
+// which is the state when launched as: python sharehunter.py (no -t/-u).
+// If a CLI scan is already running, the status poll will pick that up and
+// startPolling() will begin — no need to show old sessions.
+
+// On load: restore results, seed log offset, start polling or show session picker
+Promise.all([
+  fetch('/api/results').then(r => r.json()),
+  fetch('/api/logs').then(r => r.json()),
+  fetch('/api/status').then(r => r.json()),
+]).then(([results, logs, status]) => {
+  // Restore in-flight / previously loaded results
+  if (results.length) {
+    results.forEach(r => {
+      if (r.downloaded) _dlState.set(r.unc_path, { state: 'done', local_path: r.local_path || '' });
+    });
+    allResults = results;
+    _serverResultCount = results.length;
+    results.forEach(r => { addResultToLog(r); updateFilterDropdowns(r); });
+    updateCount();
+  }
+
+  // Restore log entries and seed offset
+  logs.filter(l => l.level !== 'result').forEach(l => addLog(l.msg, l.level));
+  _logOffset = logs.length;
+
+  setStatus(status.running);
+
+  if (status.running) {
+    // CLI-launched scan already running — sync results then start polling
+    startPolling();
+    addLog('[*] Scan in progress — live feed active', 'info');
+  } else if (!results.length) {
+    // GUI-only startup with no active scan and no results — show session picker
+    fetch('/api/session-list').then(r => r.json()).then(sessions => {
+      if (sessions.length) showSessionBanner(sessions);
+    });
+  }
+});
+</script>
+</body>
+</html>
