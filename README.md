@@ -185,7 +185,7 @@ Rules match on:
 
 ```
 sharehunter.py          Entry point — argument parsing, CLI/GUI mode selection
-snaffler/
+sharehunter/
   app.py               Flask + SocketIO web server, REST API, download handler
   scanner.py           SMB connection, share enumeration, file walker, triage engine
   rules.py             Classification rules (filename, extension, content, path)

@@ -66,8 +66,8 @@ def _default_log_path() -> str:
 
 
 def cli_scan(args, log_path: str):
-    from snaffler.domain_enum import get_domain_computers
-    from snaffler import session as sess
+    from sharehunter.domain_enum import get_domain_computers
+    from sharehunter import session as sess
 
     log_fh = _open_log(log_path)
 
@@ -128,7 +128,7 @@ def cli_scan(args, log_path: str):
     s = sess.new_scan(creds, params, loot_dir, hosts or [args.target or ''])
     active_session[0] = s
 
-    from snaffler.scanner import ShareHunter
+    from sharehunter.scanner import ShareHunter
     sn = ShareHunter(
         target=args.target or '', hosts=hosts,
         username=args.username, password=args.password or '',
@@ -187,7 +187,7 @@ def main():
 
     if gui_only and not args.username:
         # No args — just open the GUI so the user can fill in targets from the browser
-        from snaffler.app import start_gui
+        from sharehunter.app import start_gui
         print(f"[*] Web GUI:  http://127.0.0.1:{args.port}")
         print(f"[*] No target specified — enter scan details in the browser")
         start_gui(port=args.port)
@@ -206,7 +206,7 @@ def main():
         return
 
     # GUI + scan mode — scan runs in a background thread, GUI in the main thread
-    from snaffler.app import start_gui, _scan_state, _result_callback, _log_callback, _LOOT_BASE
+    from sharehunter.app import start_gui, _scan_state, _result_callback, _log_callback, _LOOT_BASE
 
     print(f"[*] Web GUI:  http://127.0.0.1:{args.port}")
 
@@ -223,7 +223,7 @@ def main():
 
     def auto_scan():
         import time
-        from snaffler import session as sess
+        from sharehunter import session as sess
         time.sleep(1.5)  # let Flask/eventlet start
 
         scan_ts  = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -241,7 +241,7 @@ def main():
 
         hosts = None
         if args.target_domain:
-            from snaffler.domain_enum import get_domain_computers
+            from sharehunter.domain_enum import get_domain_computers
             log_cb_with_log(f"[*] Enumerating computers from DC: {args.target_domain}", 'info')
             hosts = get_domain_computers(
                 dc=args.target_domain, username=args.username,
@@ -268,7 +268,7 @@ def main():
         with _scan_state['lock']:
             _scan_state['session'] = s
 
-        from snaffler.scanner import ShareHunter
+        from sharehunter.scanner import ShareHunter
         sn = ShareHunter(
             target=args.target or '', hosts=hosts,
             username=args.username, password=args.password or '',
