@@ -90,22 +90,91 @@
     .tab-content { display: none; height: calc(100vh - 110px); }
     .tab-content.active { display: flex; flex-direction: column; }
 
-    /* ── Config panel (scan form) ── */
+    /* ── Scan form — single compact row ── */
     #scan-form {
       background: var(--bg2);
       border-bottom: 1px solid var(--border);
-      padding: 12px 20px;
-      display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end;
+      padding: 8px 16px;
+      display: flex; flex-wrap: nowrap; gap: 6px; align-items: center;
     }
-    .form-group { display: flex; flex-direction: column; gap: 4px; }
-    .form-group label { font-size: 11px; color: var(--text-dim); }
-    .form-group input {
+    /* thin text inputs, no labels — placeholders carry the hint */
+    #scan-form input[type=text],
+    #scan-form input[type=password],
+    #scan-form input[type=number] {
       background: var(--bg3); border: 1px solid var(--border);
-      color: var(--text); padding: 5px 8px; border-radius: 4px;
-      font-family: inherit; font-size: 12px; width: 140px;
+      color: var(--text); padding: 5px 7px; border-radius: 4px;
+      font-family: inherit; font-size: 12px; height: 28px;
     }
-    .form-group input:focus { outline: none; border-color: var(--accent); }
-    .form-group input[name=target] { width: 180px; }
+    #scan-form input:focus { outline: none; border-color: var(--accent); }
+    /* individual widths */
+    #scan-form input[name=domain]        { width: 110px; }
+    #scan-form input[name=username]      { width: 130px; }
+    #scan-form input[name=password]      { width: 110px; padding-right: 26px; }
+    #scan-form input[name=nthash]        { width: 100px; }
+    #scan-form input[name=target]        { width: 160px; }
+    #scan-form input[name=target_domain] { width: 160px; }
+    #scan-form input[name=host_threads]  { width: 46px; }
+    #scan-form input[name=share_threads] { width: 46px; }
+    #scan-form input[name=depth]         { width: 46px; }
+    /* divider between logical groups */
+    .sf-sep {
+      width: 1px; height: 22px; background: var(--border);
+      flex-shrink: 0; margin: 0 2px;
+    }
+    /* password eye */
+    .pw-wrap { position: relative; display: flex; align-items: center; }
+    .pw-eye {
+      position: absolute; right: 5px; cursor: pointer;
+      color: var(--text-dim); font-size: 12px; user-select: none;
+      background: none; border: none; padding: 0; line-height: 1;
+    }
+    .pw-eye:hover { color: var(--text); }
+    /* radio-style target mode — tiny pill toggles */
+    .mode-toggle { display: flex; gap: 0; flex-shrink: 0; }
+    .mode-toggle label {
+      padding: 4px 9px; font-size: 11px; cursor: pointer;
+      border: 1px solid var(--border); color: var(--text-dim);
+      background: var(--bg3); white-space: nowrap;
+      transition: background .1s, color .1s;
+    }
+    .mode-toggle label:first-child { border-radius: 4px 0 0 4px; }
+    .mode-toggle label:last-child  { border-radius: 0 4px 4px 0; border-left: none; }
+    .mode-toggle input[type=radio] { display: none; }
+    .mode-toggle input[type=radio]:checked + span {
+      /* handled via JS class on label */
+    }
+    .mode-toggle label.checked { background: #1c2a3a; border-color: var(--accent); color: var(--accent); }
+    /* advanced-auth gear panel */
+    #adv-toggle {
+      background: none; border: 1px solid var(--border); border-radius: 4px;
+      color: var(--text-dim); padding: 4px 7px; cursor: pointer;
+      font-size: 13px; line-height: 1; height: 28px; flex-shrink: 0;
+    }
+    #adv-toggle:hover, #adv-toggle.open { color: var(--accent); border-color: var(--accent); }
+    #adv-panel {
+      display: none; position: absolute; top: 100%; left: 0; right: 0;
+      background: var(--bg2); border-bottom: 1px solid var(--border);
+      padding: 8px 16px; gap: 10px; align-items: center; flex-wrap: wrap;
+      z-index: 10;
+    }
+    #adv-panel.open { display: flex; }
+    #adv-panel input[type=text] {
+      background: var(--bg3); border: 1px solid var(--border);
+      color: var(--text); padding: 5px 7px; border-radius: 4px;
+      font-family: inherit; font-size: 12px; height: 28px; width: 180px;
+    }
+    #adv-panel input[type=text]:focus { outline: none; border-color: var(--accent); }
+    #adv-panel input[name=dc_ip] { width: 140px; }
+    .adv-check {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 12px; color: var(--text-dim); cursor: pointer;
+      white-space: nowrap; user-select: none;
+    }
+    .adv-check input[type=checkbox] { accent-color: var(--accent); cursor: pointer; }
+    .adv-check:hover { color: var(--text); }
+    .adv-label { font-size: 11px; color: var(--text-dim); }
+    /* wrap the form + adv panel together so adv-panel can position relative to form */
+    #form-wrap { position: relative; }
     button.btn {
       padding: 6px 16px; border-radius: 4px; border: 1px solid;
       cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 600;
@@ -156,41 +225,58 @@
     .pill-Yellow { background: #3a2f10; border-color: var(--yellow-clr);color: var(--yellow-clr);}
     .pill-Green  { background: #1c3a1c; border-color: var(--green-clr); color: var(--green-clr); }
 
-    #results-table-wrap { flex: 1; overflow: auto; padding: 0 20px 10px; }
-    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    thead { position: sticky; top: 0; background: var(--bg2); z-index: 1; }
-    th {
-      text-align: left; padding: 8px 10px; font-size: 11px;
-      color: var(--text-dim); border-bottom: 1px solid var(--border);
+    /* ── Virtual-scroll result list ── */
+    #results-table-wrap {
+      flex: 1; display: flex; flex-direction: column; overflow: hidden;
+      padding: 0 20px 10px;
+    }
+    /* Fixed header row */
+    #vt-header {
+      display: grid;
+      grid-template-columns: 72px 150px 100px 300px 1fr 120px 60px 120px 88px;
+      background: var(--bg2); border-bottom: 2px solid var(--border);
+      padding-right: 8px; /* offset for scrollbar */
+      flex-shrink: 0;
+    }
+    #vt-header div {
+      padding: 8px 10px; font-size: 11px; color: var(--text-dim);
       white-space: nowrap; cursor: pointer; user-select: none;
+      overflow: hidden; text-overflow: ellipsis;
+    }
+    #vt-header div:hover { color: var(--text); }
+    #vt-header div.sorted { color: var(--accent); }
+    /* Scrollable viewport */
+    #vt-scroll {
+      flex: 1; overflow-y: scroll; position: relative;
+    }
+    /* Total-height sentinel — sets scrollbar size */
+    #vt-sizer { position: absolute; top: 0; left: 0; width: 1px; }
+    /* Row container — positioned inside scroll viewport */
+    #vt-rows { position: absolute; top: 0; left: 0; right: 0; }
+    .vt-row {
+      display: grid;
+      grid-template-columns: 72px 150px 100px 300px 1fr 120px 60px 120px 88px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      height: 78px;        /* fixed — every row identical height (3 lines) */
       overflow: hidden;
     }
-    th:hover { color: var(--text); }
-    th .sort-arrow { margin-left: 4px; opacity: .4; }
-    th.sorted .sort-arrow { opacity: 1; }
-    /* fixed column widths */
-    col.col-rating   { width: 72px; }
-    col.col-host     { width: 160px; }
-    col.col-share    { width: 100px; }
-    col.col-path     { width: 200px; }
-    col.col-data     { width: 280px; }
-    col.col-rule     { width: 130px; }
-    col.col-size     { width: 64px; }
-    col.col-modified { width: 130px; }
-    col.col-dl       { width: 90px; }
-    td {
-      padding: 5px 10px; border-bottom: 1px solid var(--border);
-      vertical-align: top; font-size: 12px;
+    .vt-row:hover > div { background: var(--bg2); }
+    .vt-row > div {
+      padding: 5px 10px; font-size: 12px;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      align-self: center;
     }
-    /* Data column: wrap, no ellipsis */
-    td.td-data {
+    .vt-row > div.td-data {
+      font-size: 11px; color: var(--text-dim);
       white-space: pre-wrap; word-break: break-all;
-      overflow: visible; text-overflow: unset;
-      font-size: 11px; color: var(--text-dim); line-height: 1.5;
-      max-height: 80px; overflow-y: auto;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      align-self: center;
+      padding: 6px 10px;
     }
-    tr:hover td { background: var(--bg2); }
     .dl-btn {
       background: #1c2a3a; border: 1px solid var(--accent); color: var(--accent);
       padding: 3px 8px; border-radius: 4px; cursor: pointer;
@@ -257,6 +343,7 @@
   <h1>&#x1F50D; ShareHunter</h1>
   <span id="status-badge" class="idle">IDLE</span>
   <span id="result-count">0 findings</span>
+  <a href="/log-viewer" style="margin-left:auto;color:var(--text-dim);text-decoration:none;font-size:12px;padding:4px 10px;border:1px solid var(--border);border-radius:4px;" onmouseover="this.style.color='var(--accent)';this.style.borderColor='var(--accent)'" onmouseout="this.style.color='var(--text-dim)';this.style.borderColor='var(--border)'">&#x1F4C4; Log Viewer</a>
 </header>
 
 <!-- Session resume banner (shown on GUI-only startup when sessions exist) -->
@@ -275,62 +362,62 @@
 
 <!-- ═══ LIVE TAB ═══ -->
 <div id="tab-live" class="tab-content active">
-  <!-- Scan form -->
-  <div id="scan-form">
-    <!-- Row 1: target mode toggle -->
-    <div class="form-group" style="flex-basis:100%;padding-bottom:4px;display:flex;align-items:center;gap:12px">
-      <label style="color:var(--text);font-size:12px;font-weight:600">Target mode:</label>
-      <label style="display:flex;align-items:center;gap:5px;cursor:pointer">
-        <input type="radio" name="target_mode" value="specific" checked onchange="toggleTargetMode()">
-        <span>Specific (-t)</span>
-      </label>
-      <label style="display:flex;align-items:center;gap:5px;cursor:pointer">
-        <input type="radio" name="target_mode" value="domain" onchange="toggleTargetMode()">
-        <span>Domain enum (--target-domain)</span>
-      </label>
-    </div>
-    <!-- Specific target -->
-    <div class="form-group" id="fg-target">
-      <label>Target (IP / CIDR / hostname / file)</label>
-      <input type="text" name="target" placeholder="192.168.1.0/24">
-    </div>
-    <!-- Domain DC input — hidden until domain mode selected -->
-    <div class="form-group" id="fg-target-domain" style="display:none">
-      <label>DC hostname or IP</label>
-      <input type="text" name="target_domain" placeholder="dc01.corp.local">
-    </div>
-    <div class="form-group">
-      <label>Domain</label>
-      <input type="text" name="domain" placeholder="CORP">
-    </div>
-    <div class="form-group">
-      <label>Username</label>
-      <input type="text" name="username" placeholder="administrator">
-    </div>
-    <div class="form-group">
-      <label>Password</label>
-      <input type="text" name="password" placeholder="hunter2">
-    </div>
-    <div class="form-group">
-      <label>NT Hash (pass-the-hash)</label>
-      <input type="text" name="nthash" placeholder="optional">
-    </div>
-    <div class="form-group">
-      <label>Host Threads</label>
-      <input type="number" name="host_threads" value="5" min="1" max="50" style="width:70px" title="Concurrent hosts scanned at once">
-    </div>
-    <div class="form-group">
-      <label>Share Threads</label>
-      <input type="number" name="share_threads" value="10" min="1" max="50" style="width:70px" title="Concurrent shares per host">
-    </div>
-    <div class="form-group">
-      <label>Max Depth</label>
-      <input type="number" name="depth" value="10" min="1" max="30" style="width:70px">
-    </div>
-    <div style="display:flex;gap:8px;padding-top:17px">
+  <div id="form-wrap">
+    <!-- Single compact row -->
+    <div id="scan-form">
+      <!-- Target mode pill toggle -->
+      <div class="mode-toggle" id="mode-toggle">
+        <label id="lbl-specific" class="checked" title="Scan a specific IP, CIDR, hostname, or file of targets">
+          <input type="radio" name="target_mode" value="specific" checked onchange="toggleTargetMode()">
+          <span>Host/CIDR</span>
+        </label>
+        <label id="lbl-domain" title="Enumerate all computers from a DC via LDAP, then scan them all">
+          <input type="radio" name="target_mode" value="domain" onchange="toggleTargetMode()">
+          <span>Domain enum</span>
+        </label>
+      </div>
+      <!-- Target inputs — only one visible at a time -->
+      <input type="text" name="target"        id="inp-target"        placeholder="IP / CIDR / host / file">
+      <input type="text" name="target_domain" id="inp-target-domain" placeholder="DC hostname or IP" style="display:none">
+
+      <div class="sf-sep"></div>
+
+      <!-- Credentials -->
+      <input type="text"     name="domain"   placeholder="Domain"   title="Domain (CORP or corp.local)" oninput="onCredChange()">
+      <input type="text"     name="username" placeholder="Username"  title="Username — DOMAIN\user or user@domain.tld triggers auto-fill" oninput="onCredChange()">
+      <div class="pw-wrap">
+        <input type="password" name="password" placeholder="Password" title="Password" autocomplete="current-password">
+        <button type="button" class="pw-eye" onclick="togglePw(this)" title="Show/hide">&#x1F441;</button>
+      </div>
+      <input type="password" name="nthash"   placeholder="NT hash"   title="NT hash for pass-the-hash (optional)" autocomplete="off">
+
+      <div class="sf-sep"></div>
+
+      <!-- Thread / depth knobs -->
+      <input type="number" name="host_threads"  value="5"  min="1" max="50" title="Concurrent hosts">
+      <input type="number" name="share_threads" value="10" min="1" max="50" title="Concurrent shares/host">
+      <input type="number" name="depth"         value="10" min="1" max="30" title="Max directory depth">
+
+      <div class="sf-sep"></div>
+
+      <!-- Actions + advanced gear -->
       <button class="btn btn-start" onclick="startScan()">&#x25B6; Start</button>
       <button class="btn btn-stop"  onclick="stopScan()">&#x25A0; Stop</button>
-      <button class="btn btn-clear" onclick="clearLog()">&#x1F5D1; Clear</button>
+      <button class="btn btn-clear" onclick="clearLog()" title="Clear log">&#x1F5D1;</button>
+      <button id="adv-toggle" onclick="toggleAdv()" title="Advanced auth options">&#x2699;</button>
+    </div>
+
+    <!-- Advanced auth panel — hidden until gear clicked -->
+    <div id="adv-panel">
+      <span class="adv-label">Advanced auth:</span>
+      <label class="adv-check" title="Force LDAPS (port 636, TLS). Default: try plain LDAP first, auto-fall back to LDAPS.">
+        <input type="checkbox" name="ldaps" id="chk-ldaps"> LDAPS
+      </label>
+      <label class="adv-check" title="Kerberos (SASL/GSSAPI) for LDAP + SMB. Needs a ccache or creds above.">
+        <input type="checkbox" name="kerberos" id="chk-kerberos" onchange="onKerberosChange()"> Kerberos
+      </label>
+      <input type="text" name="aes_key" id="inp-aes-key" placeholder="AES key (hex, implies Kerberos)" autocomplete="off" style="display:none">
+      <input type="text" name="dc_ip"   placeholder="DC IP (optional pin / KDC)" title="Pin a specific DC IP, required for Kerberos when DNS is unavailable">
     </div>
   </div>
 
@@ -341,11 +428,11 @@
 <!-- ═══ FILTER TAB ═══ -->
 <div id="tab-filter" class="tab-content">
   <div id="filter-bar">
-    <input type="text" id="filter-text" placeholder="Search path, filename, match, rule…" oninput="applyFilters()">
-    <select id="filter-share" onchange="applyFilters()">
+    <input type="text" id="filter-text" placeholder="Search path, filename, match, rule…" oninput="scheduleFilter()">
+    <select id="filter-share" onchange="scheduleFilter(true)">
       <option value="">All Shares</option>
     </select>
-    <select id="filter-host" onchange="applyFilters()">
+    <select id="filter-host" onchange="scheduleFilter(true)">
       <option value="">All Hosts</option>
     </select>
     <div class="rating-pills">
@@ -358,33 +445,21 @@
     <span id="filter-count" style="color:var(--text-dim);font-size:12px;margin-left:auto"></span>
   </div>
   <div id="results-table-wrap">
-    <table>
-      <colgroup>
-        <col class="col-rating">
-        <col class="col-host">
-        <col class="col-share">
-        <col class="col-path">
-        <col class="col-data">
-        <col class="col-rule">
-        <col class="col-size">
-        <col class="col-modified">
-        <col class="col-dl">
-      </colgroup>
-      <thead>
-        <tr>
-          <th onclick="sortBy('rating_label')" data-col="rating_label">Rating<span class="sort-arrow">&#x25B2;</span></th>
-          <th onclick="sortBy('host')"         data-col="host">Host<span class="sort-arrow">&#x25B2;</span></th>
-          <th onclick="sortBy('share')"        data-col="share">Share<span class="sort-arrow">&#x25B2;</span></th>
-          <th onclick="sortBy('path')"         data-col="path">Path<span class="sort-arrow">&#x25B2;</span></th>
-          <th>Matched Data</th>
-          <th onclick="sortBy('rule_name')"    data-col="rule_name">Rule<span class="sort-arrow">&#x25B2;</span></th>
-          <th onclick="sortBy('size')"         data-col="size">Size<span class="sort-arrow">&#x25B2;</span></th>
-          <th onclick="sortBy('modified')"     data-col="modified">Modified<span class="sort-arrow">&#x25B2;</span></th>
-          <th>Download</th>
-        </tr>
-      </thead>
-      <tbody id="results-tbody"></tbody>
-    </table>
+    <div id="vt-header">
+      <div onclick="sortBy('rating_label')" data-col="rating_label">Rating <span class="sort-arrow">▲</span></div>
+      <div onclick="sortBy('host')"         data-col="host">Host <span class="sort-arrow">▲</span></div>
+      <div onclick="sortBy('share')"        data-col="share">Share <span class="sort-arrow">▲</span></div>
+      <div onclick="sortBy('path')"         data-col="path">Path <span class="sort-arrow">▲</span></div>
+      <div>Matched Data</div>
+      <div onclick="sortBy('rule_name')"    data-col="rule_name">Rule <span class="sort-arrow">▲</span></div>
+      <div onclick="sortBy('size')"         data-col="size">Size <span class="sort-arrow">▲</span></div>
+      <div onclick="sortBy('modified')"     data-col="modified">Modified <span class="sort-arrow">▲</span></div>
+      <div>Download</div>
+    </div>
+    <div id="vt-scroll">
+      <div id="vt-sizer"></div>
+      <div id="vt-rows"></div>
+    </div>
   </div>
 </div>
 
@@ -425,8 +500,11 @@ function _mergePolledResults(data) {
     // New scan — clear display and start fresh
     allResults = [];
     _dlState.clear();
+    _filteredRows = [];
+    _knownHosts.clear();
+    _knownShares.clear();
     clearLog();
-    document.getElementById('results-tbody').innerHTML = '';
+    document.getElementById('vt-rows').innerHTML = ''; document.getElementById('vt-sizer').style.height = '0px';
     ['filter-host','filter-share'].forEach(id => {
       const sel = document.getElementById(id);
       while (sel.options.length > 1) sel.remove(1);
@@ -445,7 +523,7 @@ function _mergePolledResults(data) {
   });
   if (newItems.length) {
     updateCount();
-    if (document.getElementById('tab-filter').classList.contains('active')) applyFilters();
+    if (document.getElementById('tab-filter').classList.contains('active')) scheduleFilter();
   }
 }
 
@@ -492,7 +570,7 @@ socket.on('new_result', r => {
   updateCount();
   updateFilterDropdowns(r);
   if (document.getElementById('tab-filter').classList.contains('active')) {
-    applyFilters();
+    scheduleFilter();
   }
 });
 
@@ -508,7 +586,7 @@ function switchTab(name) {
   document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
   document.querySelectorAll('.tab-btn')[name === 'live' ? 0 : 1].classList.add('active');
-  if (name === 'filter') applyFilters();
+  if (name === 'filter') scheduleFilter(true);
 }
 
 function setStatus(running) {
@@ -562,19 +640,93 @@ function getFormVal(name) {
 
 function toggleTargetMode() {
   const mode = document.querySelector('input[name=target_mode]:checked').value;
-  document.getElementById('fg-target').style.display        = mode === 'specific' ? '' : 'none';
-  document.getElementById('fg-target-domain').style.display = mode === 'domain'   ? '' : 'none';
+  document.getElementById('inp-target').style.display        = mode === 'specific' ? '' : 'none';
+  document.getElementById('inp-target-domain').style.display = mode === 'domain'   ? '' : 'none';
+  document.getElementById('lbl-specific').classList.toggle('checked', mode === 'specific');
+  document.getElementById('lbl-domain').classList.toggle('checked',   mode === 'domain');
+}
+
+function togglePw(btn) {
+  const inp = btn.previousElementSibling;
+  if (inp.type === 'password') { inp.type = 'text';     btn.style.opacity = '1';   }
+  else                         { inp.type = 'password'; btn.style.opacity = '0.5'; }
+}
+
+function toggleAdv() {
+  const panel = document.getElementById('adv-panel');
+  const btn   = document.getElementById('adv-toggle');
+  const open  = panel.classList.toggle('open');
+  btn.classList.toggle('open', open);
+}
+
+function onKerberosChange() {
+  const on = document.getElementById('chk-kerberos').checked;
+  document.getElementById('inp-aes-key').style.display = on ? '' : 'none';
+}
+
+// ── Auto-fill target fields from credentials ───────────────────────────────
+// Rules:
+//   - If username contains '\' (e.g. CORP\alice) or '@' (alice@corp.local),
+//     extract and fill the Domain field if empty.
+//   - If domain looks like a FQDN (has dots), auto-select Domain enum mode
+//     and fill the DC field with "dc.<domain>" if still empty.
+//   - If domain is a NETBIOS short name (no dots), stay on Specific mode.
+function onCredChange() {
+  const userEl = document.querySelector('[name=username]');
+  const domEl  = document.querySelector('[name=domain]');
+  const dcEl   = document.getElementById('inp-target-domain');
+
+  let user = userEl.value.trim();
+  let dom  = domEl.value.trim();
+
+  // Extract domain from DOMAIN\user or user@domain.tld
+  let derived = '';
+  if (user.includes('\\'))     derived = user.split('\\')[0];
+  else if (user.includes('@')) derived = user.split('@')[1];
+
+  if (derived && !dom) {
+    domEl.value = derived;
+    dom = derived;
+  }
+
+  if (!dom) return;
+
+  if (dom.includes('.')) {
+    // FQDN → switch to domain-enum and suggest dc01.<domain>
+    const radio = document.querySelector('input[name=target_mode][value=domain]');
+    if (!radio.checked) { radio.checked = true; toggleTargetMode(); }
+    if (!dcEl.value.trim()) {
+      dcEl.value = 'dc01.' + dom.toLowerCase();
+      dcEl.style.borderColor = 'var(--accent)';
+      setTimeout(() => { dcEl.style.borderColor = ''; }, 1200);
+    }
+  }
+  // short NETBIOS name → leave mode alone
 }
 
 function startScan() {
-  const mode = document.querySelector('input[name=target_mode]:checked').value;
+  const mode     = document.querySelector('input[name=target_mode]:checked').value;
+  const kerberos = document.getElementById('chk-kerberos').checked;
+  const aesKey   = getFormVal('aes_key').trim();
+
+  // If CLI set the password/hash and the user left the field blank,
+  // send a sentinel so the server uses its in-memory value.
+  const pwEl = document.querySelector('[name=password]');
+  const nhEl = document.querySelector('[name=nthash]');
+  const pwVal = pwEl.value || (pwEl.dataset.cliSet ? '__CLI__' : '');
+  const nhVal = nhEl.value || (nhEl.dataset.cliSet ? '__CLI__' : '');
+
   const payload = {
-    target:        mode === 'specific' ? getFormVal('target') : '',
+    target:        mode === 'specific' ? getFormVal('target')        : '',
     target_domain: mode === 'domain'   ? getFormVal('target_domain') : '',
     domain:        getFormVal('domain'),
     username:      getFormVal('username'),
-    password:      getFormVal('password'),
-    nthash:        getFormVal('nthash'),
+    password:      pwVal,
+    nthash:        nhVal,
+    ldaps:         document.getElementById('chk-ldaps').checked,
+    kerberos:      kerberos || !!aesKey,
+    aes_key:       aesKey,
+    dc_ip:         getFormVal('dc_ip').trim(),
     host_threads:  parseInt(getFormVal('host_threads'))  || 5,
     share_threads: parseInt(getFormVal('share_threads')) || 10,
     depth:         parseInt(getFormVal('depth'))         || 10,
@@ -586,9 +738,12 @@ function startScan() {
 
   allResults = [];
   _dlState.clear();
+  _filteredRows = [];
+  _knownHosts.clear();
+  _knownShares.clear();
   updateCount();
   clearLog();
-  document.getElementById('results-tbody').innerHTML = '';
+  document.getElementById('vt-rows').innerHTML = ''; document.getElementById('vt-sizer').style.height = '0px';
   ['filter-host','filter-share'].forEach(id => {
     const sel = document.getElementById(id);
     while (sel.options.length > 1) sel.remove(1);
@@ -648,9 +803,12 @@ function resumeSession() {
 
   allResults = [];
   _dlState.clear();
+  _filteredRows = [];
+  _knownHosts.clear();
+  _knownShares.clear();
   updateCount();
   clearLog();
-  document.getElementById('results-tbody').innerHTML = '';
+  document.getElementById('vt-rows').innerHTML = ''; document.getElementById('vt-sizer').style.height = '0px';
   ['filter-host','filter-share'].forEach(id => {
     const sel = document.getElementById(id);
     while (sel.options.length > 1) sel.remove(1);
@@ -675,7 +833,24 @@ function resumeSession() {
       return r;
     });
 
-    allResults.forEach(r => { addResultToLog(r); updateFilterDropdowns(r); });
+    // Batch log entries — don't hammer the DOM with thousands of individual appends
+    const logArea = document.getElementById('log-area');
+    const frag = document.createDocumentFragment();
+    allResults.forEach(r => {
+      updateFilterDropdowns(r);
+      const div = document.createElement('div');
+      div.className = 'log-entry result';
+      const span = document.createElement('span');
+      span.className = 'rating-' + r.rating_label;
+      span.textContent = '[' + r.rating_label + ']';
+      const rest = document.createElement('span');
+      const matchPart = r.matched_line ? `[${r.matched_line.substring(0,200)}]` : '';
+      rest.textContent = `(${r.rule_name})<${r.size}B>{\\\\${r.host}\\${r.share}\\${r.path}}${matchPart}`;
+      div.appendChild(span); div.appendChild(rest);
+      frag.appendChild(div);
+    });
+    logArea.appendChild(frag);
+    logArea.scrollTop = logArea.scrollHeight;
     updateCount();
 
     // _serverResultCount = how many results the server currently holds for this scan.
@@ -701,20 +876,31 @@ function resumeSession() {
 // ── Filter tab ─────────────────────────────────────────────────────────────
 const activePills = new Set(['Black', 'Red', 'Yellow', 'Green']);
 
+// Virtual scroll state
+let _filteredRows  = [];    // current filtered+sorted result set
+const _rowHeight   = 78;    // must match .vt-row height in CSS — never changes
+let _filterTimer   = null;  // debounce handle
+
+const _knownHosts  = new Set();
+const _knownShares = new Set();
+
 function togglePill(el) {
   const r = el.dataset.rating;
   if (activePills.has(r)) { activePills.delete(r); el.classList.remove('active'); }
   else                     { activePills.add(r);    el.classList.add('active');   }
-  applyFilters();
+  scheduleFilter();
 }
 
 function updateFilterDropdowns(r) {
   const hostSel  = document.getElementById('filter-host');
   const shareSel = document.getElementById('filter-share');
-  const hosts  = [...hostSel.options].map(o => o.value);
-  const shares = [...shareSel.options].map(o => o.value);
-  if (!hosts.includes(r.host))  { const o = new Option(r.host, r.host);   hostSel.add(o); }
-  if (!shares.includes(r.share)){ const o = new Option(r.share, r.share); shareSel.add(o); }
+  if (!_knownHosts.has(r.host))   { _knownHosts.add(r.host);   hostSel.add(new Option(r.host, r.host)); }
+  if (!_knownShares.has(r.share)) { _knownShares.add(r.share); shareSel.add(new Option(r.share, r.share)); }
+}
+
+function scheduleFilter(immediate) {
+  clearTimeout(_filterTimer);
+  _filterTimer = setTimeout(applyFilters, immediate ? 0 : 120);
 }
 
 function applyFilters() {
@@ -722,7 +908,7 @@ function applyFilters() {
   const host  = document.getElementById('filter-host').value;
   const share = document.getElementById('filter-share').value;
 
-  let filtered = allResults.filter(r => {
+  _filteredRows = allResults.filter(r => {
     if (!activePills.has(r.rating_label)) return false;
     if (host  && r.host  !== host)  return false;
     if (share && r.share !== share) return false;
@@ -733,8 +919,7 @@ function applyFilters() {
     return true;
   });
 
-  // Sort
-  filtered.sort((a, b) => {
+  _filteredRows.sort((a, b) => {
     let av = a[sortCol], bv = b[sortCol];
     if (sortCol === 'rating_label') { av = RATING_ORDER[av] ?? 99; bv = RATING_ORDER[bv] ?? 99; }
     if (typeof av === 'number') return sortAsc ? av - bv : bv - av;
@@ -742,64 +927,94 @@ function applyFilters() {
     return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
   });
 
-  document.getElementById('filter-count').textContent = filtered.length + ' rows';
-  renderTable(filtered);
+  document.getElementById('filter-count').textContent = _filteredRows.length + ' rows';
+  _visibleStart = 0;
+  renderVirtualTable();
 }
 
-// Registry so download buttons can look up their result object by index
-// without embedding JSON in HTML attributes (which breaks on special chars).
-// Rebuilt each renderTable; _dlState is the durable map that persists across renders.
+// ── Virtual table renderer ─────────────────────────────────────────────────
+// Instead of inserting N thousand <tr> elements, we render only the slice
+// visible in the viewport plus a small overscan, and use spacer rows above
+// and below to maintain correct scrollbar size.
+
 const _dlRegistry = [];
 
-function renderTable(rows) {
-  const tbody = document.getElementById('results-tbody');
-  tbody.innerHTML = '';
+function _buildRow(r) {
+  const dataText = r.matched_line
+    ? r.matched_line.substring(0, 600) + (r.matched_line.length > 600 ? '…' : '')
+    : '';
+  const dlInfo   = _dlState.get(r.unc_path);
+  const isDone   = dlInfo && dlInfo.state === 'done';
+  const isErr    = dlInfo && dlInfo.state === 'err';
+  const btnClass = isDone ? 'dl-btn done' : (isErr ? 'dl-btn err' : 'dl-btn');
+  const btnLabel = isDone ? '✓ Got' : (isErr ? '⚠ Err' : '↓ Get');
+  const btnTitle = isErr  ? esc(dlInfo.msg || '') : (isDone ? esc(dlInfo.local_path || '') : '');
+
+  const row = document.createElement('div');
+  row.className = 'vt-row';
+  row.innerHTML = `
+    <div><span class="badge badge-${esc(r.rating_label)}">${esc(r.rating_label)}</span></div>
+    <div title="${esc(r.host)}">${esc(r.host)}</div>
+    <div title="${esc(r.share)}">${esc(r.share)}</div>
+    <div title="${esc(r.path)}">${esc(r.path)}</div>
+    <div class="td-data">${esc(dataText)}</div>
+    <div title="${esc(r.rule_desc)}">${esc(r.rule_name)}</div>
+    <div>${fmtSize(r.size)}</div>
+    <div>${esc(r.modified)}</div>
+    <div><button class="${btnClass}" title="${btnTitle}" ${isDone ? 'disabled' : ''}>${btnLabel}</button></div>
+  `;
+  row.onclick = (e) => { if (!e.target.closest('.dl-btn')) showModal(r); };
+  const btn = row.querySelector('.dl-btn');
+  if (btn && !isDone) {
+    btn.addEventListener('click', (e) => { e.stopPropagation(); downloadFile(btn, r); });
+  }
+  return row;
+}
+
+function renderVirtualTable() {
+  const scroller = document.getElementById('vt-scroll');
+  const sizer    = document.getElementById('vt-sizer');
+  const rowsEl   = document.getElementById('vt-rows');
+  const total    = _filteredRows.length;
+
   _dlRegistry.length = 0;
+  _filteredRows.forEach(r => _dlRegistry.push(r));
 
-  for (const r of rows) {
-    const idx = _dlRegistry.length;
-    _dlRegistry.push(r);
-
-    const tr = document.createElement('tr');
-    tr.style.cursor = 'pointer';
-    tr.onclick = (e) => { if (!e.target.closest('.dl-btn')) showModal(r); };
-
-    const dataText = r.matched_line
-      ? r.matched_line.substring(0, 300) + (r.matched_line.length > 300 ? '…' : '')
-      : '';
-
-    // Determine download button state from durable _dlState map
-    const dlInfo     = _dlState.get(r.unc_path);
-    const isDone     = dlInfo && dlInfo.state === 'done';
-    const isErr      = dlInfo && dlInfo.state === 'err';
-    const btnClass   = isDone ? 'dl-btn done' : (isErr ? 'dl-btn err' : 'dl-btn');
-    const btnLabel   = isDone ? '&#x2713; Got' : (isErr ? '&#x26A0; Err' : '&#x2B07; Get');
-    const btnTitle   = isErr  ? esc(dlInfo.msg || '') : (isDone ? esc(dlInfo.local_path || '') : '');
-    const btnDisabled = isDone ? 'disabled' : '';
-
-    tr.innerHTML = `
-      <td><span class="badge badge-${esc(r.rating_label)}">${esc(r.rating_label)}</span></td>
-      <td title="${esc(r.host)}">${esc(r.host)}</td>
-      <td title="${esc(r.share)}">${esc(r.share)}</td>
-      <td title="${esc(r.path)}">${esc(r.path)}</td>
-      <td class="td-data">${esc(dataText)}</td>
-      <td title="${esc(r.rule_desc)}">${esc(r.rule_name)}</td>
-      <td>${fmtSize(r.size)}</td>
-      <td>${esc(r.modified)}</td>
-      <td><button class="${btnClass}" data-idx="${idx}" title="${btnTitle}" ${btnDisabled}>${btnLabel}</button></td>
-    `;
-    tbody.appendChild(tr);
+  if (total === 0) {
+    sizer.style.height = '0px';
+    rowsEl.innerHTML   = '';
+    rowsEl.style.top   = '0px';
+    return;
   }
 
-  // Attach click handlers after DOM insertion
-  tbody.querySelectorAll('.dl-btn:not([disabled])').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const r = _dlRegistry[parseInt(btn.dataset.idx)];
-      downloadFile(btn, r);
-    });
-  });
+  // Total scroll height — gives the scrollbar the right size
+  sizer.style.height = (total * _rowHeight) + 'px';
+
+  const scrollTop  = scroller.scrollTop;
+  const viewHeight = scroller.clientHeight;
+  const overscan   = 5;
+  const startIdx   = Math.max(0, Math.floor(scrollTop / _rowHeight) - overscan);
+  const endIdx     = Math.min(total, Math.ceil((scrollTop + viewHeight) / _rowHeight) + overscan);
+
+  // Position the row container at the pixel offset of the first rendered row
+  rowsEl.style.top = (startIdx * _rowHeight) + 'px';
+
+  const frag = document.createDocumentFragment();
+  for (let i = startIdx; i < endIdx; i++) {
+    frag.appendChild(_buildRow(_filteredRows[i]));
+  }
+  rowsEl.innerHTML = '';
+  rowsEl.appendChild(frag);
 }
+
+// Scroll listener — plain scroll event on the dedicated scroll div, no jank
+document.addEventListener('DOMContentLoaded', () => {
+  let _raf = null;
+  document.getElementById('vt-scroll').addEventListener('scroll', () => {
+    if (_raf) return;
+    _raf = requestAnimationFrame(() => { _raf = null; renderVirtualTable(); });
+  });
+});
 
 function downloadFile(btn, r) {
   btn.disabled    = true;
@@ -848,10 +1063,10 @@ function downloadFile(btn, r) {
 function sortBy(col) {
   if (sortCol === col) sortAsc = !sortAsc;
   else { sortCol = col; sortAsc = true; }
-  document.querySelectorAll('th').forEach(th => {
-    th.classList.toggle('sorted', th.dataset.col === col);
-    const arrow = th.querySelector('.sort-arrow');
-    if (arrow) arrow.textContent = (th.dataset.col === col && !sortAsc) ? '▼' : '▲';
+  document.querySelectorAll('#vt-header div[data-col]').forEach(el => {
+    el.classList.toggle('sorted', el.dataset.col === col);
+    const arrow = el.querySelector('.sort-arrow');
+    if (arrow) arrow.textContent = (el.dataset.col === col && !sortAsc) ? '▼' : '▲';
   });
   applyFilters();
 }
@@ -916,12 +1131,62 @@ function fmtSize(n) {
 // If a CLI scan is already running, the status poll will pick that up and
 // startPolling() will begin — no need to show old sessions.
 
+// ── Prefill form from CLI args ─────────────────────────────────────────────
+function prefillForm(d) {
+  if (!d.ok) return;
+
+  // Credentials
+  if (d.username) document.querySelector('[name=username]').value = d.username;
+  if (d.domain)   document.querySelector('[name=domain]').value   = d.domain;
+  // Password/hash: server only tells us whether they exist, doesn't send the value.
+  // Show a placeholder that makes clear the credential is loaded server-side.
+  if (d.has_password) {
+    const pw = document.querySelector('[name=password]');
+    pw.placeholder = '(set via CLI)';
+    pw.dataset.cliSet = '1';   // flag so startScan knows not to send blank
+  }
+  if (d.has_nthash) {
+    const nh = document.querySelector('[name=nthash]');
+    nh.placeholder = '(set via CLI)';
+    nh.dataset.cliSet = '1';
+  }
+
+  // Target — prefer target_domain over target
+  if (d.target_domain) {
+    document.getElementById('inp-target-domain').value = d.target_domain;
+    const radio = document.querySelector('input[name=target_mode][value=domain]');
+    radio.checked = true;
+    toggleTargetMode();
+  } else if (d.target) {
+    document.getElementById('inp-target').value = d.target;
+  }
+
+  // Threads / depth
+  if (d.host_threads)  document.querySelector('[name=host_threads]').value  = d.host_threads;
+  if (d.share_threads) document.querySelector('[name=share_threads]').value = d.share_threads;
+  if (d.depth)         document.querySelector('[name=depth]').value         = d.depth;
+
+  // Advanced auth
+  if (d.use_ldaps)    document.getElementById('chk-ldaps').checked    = true;
+  if (d.use_kerberos) { document.getElementById('chk-kerberos').checked = true; onKerberosChange(); }
+  if (d.dc_ip)        document.querySelector('[name=dc_ip]').value     = d.dc_ip;
+
+  // Flash the fields to show they were auto-filled
+  const filled = ['domain','username','target','target_domain','host_threads','share_threads','depth'];
+  filled.forEach(n => {
+    const el = document.querySelector(`[name=${n}]`);
+    if (el && el.value) { el.style.borderColor = 'var(--accent)'; setTimeout(() => { el.style.borderColor = ''; }, 1500); }
+  });
+}
+
 // On load: restore results, seed log offset, start polling or show session picker
 Promise.all([
   fetch('/api/results').then(r => r.json()),
   fetch('/api/logs').then(r => r.json()),
   fetch('/api/status').then(r => r.json()),
-]).then(([results, logs, status]) => {
+  fetch('/api/prefill').then(r => r.json()).catch(() => ({ok: false})),
+]).then(([results, logs, status, prefill]) => {
+  prefillForm(prefill);
   // Restore in-flight / previously loaded results
   if (results.length) {
     results.forEach(r => {
@@ -929,7 +1194,24 @@ Promise.all([
     });
     allResults = results;
     _serverResultCount = results.length;
-    results.forEach(r => { addResultToLog(r); updateFilterDropdowns(r); });
+    // Batch-append all log entries in a single fragment
+    const logArea = document.getElementById('log-area');
+    const frag = document.createDocumentFragment();
+    results.forEach(r => {
+      updateFilterDropdowns(r);
+      const div = document.createElement('div');
+      div.className = 'log-entry result';
+      const span = document.createElement('span');
+      span.className = 'rating-' + r.rating_label;
+      span.textContent = '[' + r.rating_label + ']';
+      const rest = document.createElement('span');
+      const matchPart = r.matched_line ? `[${r.matched_line.substring(0,200)}]` : '';
+      rest.textContent = `(${r.rule_name})<${r.size}B>{\\\\${r.host}\\${r.share}\\${r.path}}${matchPart}`;
+      div.appendChild(span); div.appendChild(rest);
+      frag.appendChild(div);
+    });
+    logArea.appendChild(frag);
+    logArea.scrollTop = logArea.scrollHeight;
     updateCount();
   }
 
