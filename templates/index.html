@@ -493,16 +493,20 @@ let _wsWorking         = false;   // set true if WS actually delivers a result/l
 // Separate from allResults.length because allResults may include historical
 // results loaded from a prior session file.
 let _serverResultCount = 0;
+let _currentScanId = null;
 
-function _mergePolledResults(data) {
-  // Detect scan restart: server result count went backwards (new scan started)
-  if (data.length < _serverResultCount) {
-    // New scan — clear display and start fresh
+function _mergePolledResults(payload) {
+  const scan_id = payload.scan_id ?? null;
+  const data    = payload.results ?? payload; // fallback if old format
+
+  // Detect a genuinely new scan by scan_id change
+  if (scan_id !== null && scan_id !== _currentScanId && _currentScanId !== null) {
     allResults = [];
     _dlState.clear();
     _filteredRows = [];
     _knownHosts.clear();
     _knownShares.clear();
+    _serverResultCount = 0;
     clearLog();
     document.getElementById('vt-rows').innerHTML = ''; document.getElementById('vt-sizer').style.height = '0px';
     ['filter-host','filter-share'].forEach(id => {
@@ -511,6 +515,7 @@ function _mergePolledResults(data) {
     });
     addLog('[*] New scan detected — display reset', 'info');
   }
+  if (scan_id !== null) _currentScanId = scan_id;
 
   const newItems = data.slice(_serverResultCount);
   _serverResultCount = data.length;
@@ -691,17 +696,24 @@ function onCredChange() {
 
   if (!dom) return;
 
-  if (dom.includes('.')) {
-    // FQDN → switch to domain-enum and suggest dc01.<domain>
+  // Only auto-switch to domain-enum and suggest DC if the domain looks like
+  // a valid FQDN (at least two non-empty labels, no trailing dot) AND the
+  // user hasn't already entered a target in the host/CIDR field.
+  const domParts = dom.replace(/\.$/, '').split('.');
+  const isFQDN   = domParts.length >= 2 && domParts.every(p => p.length > 0);
+  const hostVal  = document.querySelector('[name=target]')?.value?.trim() || '';
+
+  if (isFQDN && !hostVal) {
+    // FQDN domain with no host/CIDR target → switch to domain-enum mode
     const radio = document.querySelector('input[name=target_mode][value=domain]');
     if (!radio.checked) { radio.checked = true; toggleTargetMode(); }
     if (!dcEl.value.trim()) {
-      dcEl.value = 'dc01.' + dom.toLowerCase();
+      dcEl.value = 'dc01.' + dom.toLowerCase().replace(/\.$/, '');
       dcEl.style.borderColor = 'var(--accent)';
       setTimeout(() => { dcEl.style.borderColor = ''; }, 1200);
     }
   }
-  // short NETBIOS name → leave mode alone
+  // short NETBIOS name or host/CIDR already set → leave mode alone
 }
 
 function startScan() {
@@ -1185,7 +1197,9 @@ Promise.all([
   fetch('/api/logs').then(r => r.json()),
   fetch('/api/status').then(r => r.json()),
   fetch('/api/prefill').then(r => r.json()).catch(() => ({ok: false})),
-]).then(([results, logs, status, prefill]) => {
+]).then(([_resultsPayload, logs, status, prefill]) => {
+  const results = _resultsPayload.results ?? _resultsPayload;
+  if (_resultsPayload.scan_id != null) _currentScanId = _resultsPayload.scan_id;
   prefillForm(prefill);
   // Restore in-flight / previously loaded results
   if (results.length) {
