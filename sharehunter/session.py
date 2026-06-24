@@ -162,9 +162,16 @@ def mark_downloaded(session: dict, unc_path: str, local_path: str):
     save(session)
 
 
-def mark_ended(session: dict):
+def mark_ended(session: dict, stopped: bool = False):
     session['ended_at'] = datetime.now().isoformat()
-    session['hosts_pending'] = []
+    if stopped:
+        # Recompute pending = total minus completed, so any in-flight host
+        # that was interrupted before mark_host_done() ran is preserved.
+        completed = set(session.get('hosts_completed', []))
+        session['hosts_pending'] = [h for h in session.get('hosts_total', [])
+                                    if h not in completed]
+    else:
+        session['hosts_pending'] = []
     save(session)
 
 

@@ -28,6 +28,24 @@ from sharehunter import session as sess
 # Max file size to read content from (bytes)
 MAX_CONTENT_SIZE = 512 * 1024   # 512 KB
 
+_BLANK_LM = 'aad3b435b51404eeaad3b435b51404ee'
+
+
+def _parse_hash(raw: str) -> tuple[str, str]:
+    """Normalize any hash input format into (lmhash, nthash) for impacket.
+
+    Accepts:
+      LM:NT   — aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c
+      :NT     — :8846f7eaee8fb117ad06bdd830b7586c
+      NT      — 8846f7eaee8fb117ad06bdd830b7586c
+    """
+    raw = raw.strip()
+    if ':' in raw:
+        lm, nt = raw.split(':', 1)
+        lm = lm.strip() or _BLANK_LM
+        return lm, nt.strip()
+    return _BLANK_LM, raw
+
 INTERESTING_SHARE_NAMES = re.compile(
     r'(?i)(backup|files?|data|share|users?|home|profiles?|'
     r'deploy|install|software|scripts?|config|admin|it|'
@@ -126,17 +144,21 @@ class ShareHunter:
     def __init__(self, username: str, password: str,
                  target: str = '', hosts: Optional[List[str]] = None,
                  domain: str = '', nthash: str = '',
+                 use_kerberos: bool = False, aes_key: str = '', dc_ip: str = '',
                  host_threads: int = 5, share_threads: int = 10,
                  max_depth: int = 10,
                  result_callback: Optional[Callable] = None,
                  log_callback: Optional[Callable] = None,
                  session: Optional[dict] = None):
         self.target       = target
-        self.hosts        = hosts   # pre-resolved list (from --target-domain)
+        self.hosts        = hosts
         self.username     = username
         self.password     = password
         self.domain       = domain
         self.nthash       = nthash
+        self.use_kerberos  = use_kerberos
+        self.aes_key       = aes_key
+        self.dc_ip         = dc_ip
         self.host_threads  = host_threads
         self.share_threads = share_threads
         self.max_depth     = max_depth
@@ -157,12 +179,25 @@ class ShareHunter:
     # ── Connection helpers ─────────────────────────────────────────────────
 
     def _connect(self, host: str) -> Optional[SMBConnection]:
+        """
+        Connect to *host* over SMB.  Auth preference order:
+          1. Kerberos  (use_kerberos=True)
+          2. NTLM + pass-the-hash
+          3. NTLM + password
+        """
         try:
             conn = SMBConnection(host, host, sess_port=445, timeout=10)
-            if self.nthash:
-                lm = 'aad3b435b51404eeaad3b435b51404ee'
-                conn.login(self.username, '', self.domain,
-                           lmhash=lm, nthash=self.nthash)
+            if self.use_kerberos:
+                conn.kerberosLogin(
+                    self.username, self.password, self.domain,
+                    lmhash='', nthash=self.nthash,
+                    aesKey=self.aes_key,
+                    kdcHost=self.dc_ip or None,
+                    useCache=(not self.aes_key and not self.nthash and not self.password),
+                )
+            elif self.nthash:
+                lm, nt = _parse_hash(self.nthash)
+                conn.login(self.username, '', self.domain, lmhash=lm, nthash=nt)
             else:
                 conn.login(self.username, self.password, self.domain)
             return conn

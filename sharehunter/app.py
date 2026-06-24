@@ -117,7 +117,8 @@ def api_session_resume():
             _result_callback(result)
 
         def log_cb(msg, level='info'):
-            log_fh.write(msg + '\n')
+            if level != 'result':
+                log_fh.write(msg + '\n')
             _log_callback(msg, level)
 
         def run_resumed():
@@ -130,6 +131,9 @@ def api_session_resume():
                     password=creds.get('password', ''),
                     domain=creds.get('domain', ''),
                     nthash=creds.get('nthash', ''),
+                    use_kerberos=creds.get('use_kerberos', False),
+                    aes_key=creds.get('aes_key', ''),
+                    dc_ip=creds.get('dc_ip', ''),
                     host_threads=s.get('scan_params', {}).get('host_threads', 5),
                     share_threads=s.get('scan_params', {}).get('share_threads', 10),
                     max_depth=s.get('scan_params', {}).get('depth', 10),
@@ -142,9 +146,10 @@ def api_session_resume():
             except Exception as e:
                 log_cb(f"[!] Resumed scan error: {e}", 'error')
             finally:
+                stopped = snaffler is not None and snaffler._stop_event.is_set()
                 _scan_state['running']  = False
                 _scan_state['snaffler'] = None
-                sess.mark_ended(s)
+                sess.mark_ended(s, stopped=stopped)
                 log_fh.close()
                 socketio.emit('scan_done', {'total': len(_scan_state['results'])})
 
@@ -168,15 +173,28 @@ def api_start():
     from sharehunter.domain_enum import get_domain_computers
     data = request.get_json(force=True)
 
+    cli_creds = _scan_state.get('creds') or {}
+
     target        = data.get('target', '').strip()
     target_domain = data.get('target_domain', '').strip()
-    username      = data.get('username', '').strip()
-    password      = data.get('password', '')
-    domain        = data.get('domain', '').strip()
-    nthash        = data.get('nthash', '').strip()
+    username      = data.get('username', '').strip()      or cli_creds.get('username', '')
+    domain        = data.get('domain', '').strip()        or cli_creds.get('domain', '')
+    use_ldaps     = bool(data.get('ldaps', False))
+    use_kerberos  = bool(data.get('kerberos', False))     or cli_creds.get('use_kerberos', False)
+    aes_key       = data.get('aes_key', '').strip()
+    dc_ip         = data.get('dc_ip', '').strip()         or cli_creds.get('dc_ip', '')
     host_threads  = int(data.get('host_threads', 5))
     share_threads = int(data.get('share_threads', 10))
     depth         = int(data.get('depth', 10))
+
+    # '__CLI__' sentinel means "use the value the CLI already loaded server-side"
+    raw_pw    = data.get('password', '')
+    raw_nh    = data.get('nthash', '').strip()
+    password  = cli_creds.get('password', '') if raw_pw    == '__CLI__' else raw_pw
+    nthash    = cli_creds.get('nthash', '')   if raw_nh    == '__CLI__' else raw_nh
+
+    if aes_key:
+        use_kerberos = True
 
     if not (target or target_domain) or not username:
         return jsonify({'ok': False, 'error': 'target (or target-domain) and username are required'})
@@ -190,14 +208,18 @@ def api_start():
     os.makedirs(loot_dir, exist_ok=True)
 
     creds = {
-        'username': username,
-        'password': password,
-        'domain':   domain,
-        'nthash':   nthash,
+        'username':     username,
+        'password':     password,
+        'domain':       domain,
+        'nthash':       nthash,
+        'use_kerberos': use_kerberos,
+        'aes_key':      aes_key,
+        'dc_ip':        dc_ip,
     }
     params = {
         'target':        target,
         'target_domain': target_domain,
+        'use_ldaps':     use_ldaps,
         'host_threads':  host_threads,
         'share_threads': share_threads,
         'depth':         depth,
@@ -222,7 +244,8 @@ def api_start():
             _result_callback(result)
 
         def log_cb(msg, level='info'):
-            log_fh.write(msg + '\n')
+            if level != 'result':
+                log_fh.write(msg + '\n')
             _log_callback(msg, level)
 
         # Tell the browser where the log file is
@@ -234,7 +257,11 @@ def api_start():
                 log_cb(f"[*] Enumerating computers from DC: {target_domain}", 'info')
                 hosts = get_domain_computers(
                     dc=target_domain, username=username, password=password,
-                    domain=domain, nthash=nthash, log_callback=log_cb,
+                    domain=domain, nthash=nthash,
+                    use_ldaps=use_ldaps,
+                    use_kerberos=use_kerberos,
+                    aes_key=aes_key,
+                    log_callback=log_cb,
                 )
                 if not hosts:
                     log_cb('[!] No hosts returned from domain enumeration', 'error')
@@ -249,6 +276,9 @@ def api_start():
                 target=target, hosts=hosts,
                 username=username, password=password,
                 domain=domain, nthash=nthash,
+                use_kerberos=use_kerberos,
+                aes_key=aes_key,
+                dc_ip=dc_ip,
                 host_threads=host_threads, share_threads=share_threads,
                 max_depth=depth,
                 result_callback=result_cb,
@@ -260,10 +290,11 @@ def api_start():
         except Exception as e:
             log_cb(f"[!] Scan error: {e}", 'error')
         finally:
+            stopped = snaffler is not None and snaffler._stop_event.is_set()
             _scan_state['running'] = False
             _scan_state['snaffler'] = None
             if _scan_state.get('session') is not None:
-                sess.mark_ended(_scan_state['session'])
+                sess.mark_ended(_scan_state['session'], stopped=stopped)
             log_fh.close()
             socketio.emit('scan_done', {'total': len(_scan_state['results'])})
 
@@ -305,6 +336,30 @@ def api_status():
     with _scan_state['lock']:
         count = len(_scan_state['results'])
     return jsonify({'running': _scan_state['running'], 'count': count})
+
+
+@app.route('/api/prefill')
+def api_prefill():
+    """Return CLI-supplied credentials and scan params so the GUI can pre-populate its form."""
+    creds  = _scan_state.get('creds')  or {}
+    params = _scan_state.get('params') or {}
+    if not creds and not params:
+        return jsonify({'ok': False})
+    return jsonify({
+        'ok':           True,
+        'username':     creds.get('username', ''),
+        'domain':       creds.get('domain', ''),
+        'has_password': bool(creds.get('password', '')),
+        'has_nthash':   bool(creds.get('nthash', '')),
+        'use_kerberos': creds.get('use_kerberos', False),
+        'dc_ip':        creds.get('dc_ip', ''),
+        'target':       params.get('target', ''),
+        'target_domain':params.get('target_domain', ''),
+        'host_threads': params.get('host_threads', 5),
+        'share_threads':params.get('share_threads', 10),
+        'depth':        params.get('depth', 10),
+        'use_ldaps':    params.get('use_ldaps', False),
+    })
 
 
 @app.route('/api/logs')
@@ -378,10 +433,11 @@ def api_download():
     # scheduler is not starved and other requests can proceed concurrently.
     def _fetch_smb():
         from impacket.smbconnection import SMBConnection
+        from sharehunter.scanner import _parse_hash
         conn = SMBConnection(host, host, sess_port=445, timeout=15)
         if nthash:
-            lm = 'aad3b435b51404eeaad3b435b51404ee'
-            conn.login(username, '', domain, lmhash=lm, nthash=nthash)
+            lm, nt = _parse_hash(nthash)
+            conn.login(username, '', domain, lmhash=lm, nthash=nt)
         else:
             conn.login(username, password, domain)
         buf = []
@@ -400,7 +456,8 @@ def api_download():
     _log_callback(f"[LOOT] Saved: {save_path}  ({len(file_bytes)} bytes)", 'info')
 
     # Record in session
-    unc_path = f"\\\\{host}\\{share}\\{path.lstrip('\\')}"
+    clean_path = path.lstrip('\\')
+    unc_path = f"\\\\{host}\\{share}\\{clean_path}"
     if _scan_state.get('session') is not None:
         sess.mark_downloaded(_scan_state['session'], unc_path, save_path)
 
@@ -416,6 +473,237 @@ def _sanitise(name: str) -> str:
     """Strip characters that are unsafe in filesystem paths."""
     import re
     return re.sub(r'[\\/:*?"<>|]', '_', name)
+
+
+# ─── Log Viewer ───────────────────────────────────────────────────────────────
+
+@app.route('/log-viewer')
+def log_viewer():
+    return render_template('log_viewer.html')
+
+
+@app.route('/api/log-list')
+def api_log_list():
+    """Return list of log files in the logs directory, newest first."""
+    logs = []
+    if os.path.isdir(_LOGS_BASE):
+        for fn in sorted(os.listdir(_LOGS_BASE), reverse=True):
+            if fn.endswith('.log'):
+                fp = os.path.join(_LOGS_BASE, fn)
+                logs.append({
+                    'name': fn,
+                    'path': fp,
+                    'size': os.path.getsize(fp),
+                    'mtime': datetime.fromtimestamp(os.path.getmtime(fp)).strftime('%Y-%m-%d %H:%M:%S'),
+                })
+    return jsonify(logs)
+
+
+@app.route('/api/parse-log', methods=['POST'])
+def api_parse_log():
+    """
+    Parse a Snaffler or ShareHunter log file.
+
+    Accepts either:
+      - JSON body: { "path": "/absolute/path/to/file.log" }
+      - multipart form upload: file field named 'file'
+
+    Returns JSON list of parsed finding objects.
+    """
+    import re as _re
+
+    # ── Resolve the log file content ────────────────────────────────────────
+    if request.content_type and 'multipart' in request.content_type:
+        f = request.files.get('file')
+        if not f:
+            return jsonify({'ok': False, 'error': 'No file uploaded'}), 400
+        try:
+            raw = f.read().decode('utf-8', errors='replace')
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)}), 400
+    else:
+        data = request.get_json(force=True) or {}
+        path = data.get('path', '').strip()
+        if not path:
+            return jsonify({'ok': False, 'error': 'path is required'}), 400
+        try:
+            with open(path, 'r', encoding='utf-8', errors='replace') as fh:
+                raw = fh.read()
+        except Exception as e:
+            return jsonify({'ok': False, 'error': str(e)}), 400
+
+    findings = _parse_log_text(raw)
+    return jsonify({'ok': True, 'findings': findings, 'total': len(findings)})
+
+
+def _parse_log_text(raw: str) -> list:
+    # Parses ShareHunter and Snaffler log formats into structured finding dicts.
+    import re as _re
+
+    RATING_MAP = {
+        'Black': 0, 'black': 0,
+        'Red':   1, 'red':   1,
+        'Yellow':2, 'yellow':2,
+        'Green': 3, 'green': 3,
+    }
+    RATING_LABELS = {0: 'Black', 1: 'Red', 2: 'Yellow', 3: 'Green'}
+
+    # ── Pattern A: ShareHunter / ShareHunter-compatible Snaffler output ──────
+    # [Red](Pass-In-Code)<165B>{\\host\share\path}[matched data]
+    PAT_SH = _re.compile(
+        r'^\[(?P<rating>Black|Red|Yellow|Green)\]'
+        r'\((?P<rule>[^)]+)\)'
+        r'<(?P<size>\d+)B?>'
+        r'\{(?P<unc>[^}]+)\}'
+        r'(?:\[(?P<match>.*)\])?',
+        _re.IGNORECASE
+    )
+
+    # ── Pattern B: Real Snaffler TSV/structured output ───────────────────────
+    # [2024-01-01 12:00:00Z][Triage][Red][RuleName] {\\host\share\path} [match]
+    PAT_SNAF_TS = _re.compile(
+        r'^\[(?P<ts>[^\]]{10,30})\]'
+        r'\[(?:Triage|triage|INFO|WARN|ERROR)?\]'
+        r'\[(?P<rating>Black|Red|Yellow|Green)\]'
+        r'\[(?P<rule>[^\]]+)\]\s*'
+        r'\{(?P<unc>[^}]+)\}'
+        r'(?:\s*\[(?P<match>.*)\])?',
+        _re.IGNORECASE | _re.DOTALL
+    )
+
+    # ── Pattern C: Real Snaffler plain (no timestamp, bracket-only) ──────────
+    # [0m][RuleName]  {\\host\share\path} [match]   — colour-prefix variants
+    PAT_SNAF_PLAIN = _re.compile(
+        r'^\[(?:0m|Black|Red|Yellow|Green|\d+m)\]'
+        r'\[(?P<rule>[^\]]+)\]\s*'
+        r'\{(?P<unc>[^}]+)\}'
+        r'(?:\s*\[(?P<match>.*)\])?',
+        _re.IGNORECASE | _re.DOTALL
+    )
+
+    # ── Pattern D: Real Snaffler console output ───────────────────────────────
+    # [DOMAIN\user@host] 2026-06-18 15:12:50Z [File] {Red}<RuleName|R|regex|size|date>(\\host\share\path) match
+    # Only match [File] lines (not [Share] or [Info])
+    PAT_SNAF_REAL = _re.compile(
+        r'^\[(?P<ctx>[^\]]+)\]\s+'                          # [DOMAIN\user@host]
+        r'(?P<ts>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}Z)\s+'  # timestamp
+        r'\[File\]\s+'                                       # [File] only
+        r'\{(?P<rating>Black|Red|Yellow|Green)\}'            # {Red}
+        r'<(?P<rule>[^|>]+)'                                 # <RuleName
+        r'(?:\|[^|]*\|[^|]*\|(?P<size>[^|]+)\|[^>]*)?>?'   # |R|regex|size|date> (optional)
+        r'\((?P<unc>[^)]+)\)'                                # (\\host\share\path)
+        r'(?:\s+(?P<match>.+))?',                            # match text
+        _re.IGNORECASE
+    )
+
+    def _split_unc(unc: str):
+        unc = unc.lstrip('\\').lstrip('/')
+        parts = _re.split(r'[/\\]', unc, maxsplit=2)
+        host  = parts[0] if len(parts) > 0 else ''
+        share = parts[1] if len(parts) > 1 else ''
+        path  = parts[2] if len(parts) > 2 else ''
+        filename = path.split('\\')[-1].split('/')[-1] if path else ''
+        return host, share, path, filename
+
+    findings = []
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        m = PAT_SH.match(line)
+        if m:
+            rating_label = RATING_LABELS.get(RATING_MAP.get(m.group('rating'), 3), 'Green')
+            host, share, path, filename = _split_unc(m.group('unc'))
+            findings.append({
+                'rating':       RATING_MAP.get(m.group('rating'), 3),
+                'rating_label': rating_label,
+                'rule_name':    m.group('rule'),
+                'size':         int(m.group('size')),
+                'unc_path':     m.group('unc'),
+                'host':         host,
+                'share':        share,
+                'path':         path,
+                'filename':     filename,
+                'matched_line': (m.group('match') or '').strip('﻿'),
+                'timestamp':    '',
+                'source':       'sharehunter',
+            })
+            continue
+
+        m = PAT_SNAF_TS.match(line)
+        if m:
+            rating_label = RATING_LABELS.get(RATING_MAP.get(m.group('rating'), 3), 'Green')
+            host, share, path, filename = _split_unc(m.group('unc'))
+            findings.append({
+                'rating':       RATING_MAP.get(m.group('rating'), 3),
+                'rating_label': rating_label,
+                'rule_name':    m.group('rule'),
+                'size':         0,
+                'unc_path':     m.group('unc'),
+                'host':         host,
+                'share':        share,
+                'path':         path,
+                'filename':     filename,
+                'matched_line': (m.group('match') or '').strip('﻿'),
+                'timestamp':    m.group('ts'),
+                'source':       'snaffler',
+            })
+            continue
+
+        m = PAT_SNAF_PLAIN.match(line)
+        if m:
+            host, share, path, filename = _split_unc(m.group('unc'))
+            findings.append({
+                'rating':       3,
+                'rating_label': 'Green',
+                'rule_name':    m.group('rule'),
+                'size':         0,
+                'unc_path':     m.group('unc'),
+                'host':         host,
+                'share':        share,
+                'path':         path,
+                'filename':     filename,
+                'matched_line': (m.group('match') or '').strip('﻿'),
+                'timestamp':    '',
+                'source':       'snaffler',
+            })
+            continue
+
+        m = PAT_SNAF_REAL.match(line)
+        if m:
+            rating     = RATING_MAP.get(m.group('rating'), 3)
+            rating_lbl = RATING_LABELS.get(rating, 'Green')
+            size_str   = (m.group('size') or '0').strip()
+            # size may be "73MB", "32B", "71.4MB" — convert to bytes int
+            try:
+                if size_str.upper().endswith('MB'):
+                    size = int(float(size_str[:-2]) * 1024 * 1024)
+                elif size_str.upper().endswith('KB'):
+                    size = int(float(size_str[:-2]) * 1024)
+                elif size_str.upper().endswith('B'):
+                    size = int(float(size_str[:-1]))
+                else:
+                    size = int(float(size_str))
+            except Exception:
+                size = 0
+            host, share, path, filename = _split_unc(m.group('unc'))
+            findings.append({
+                'rating':       rating,
+                'rating_label': rating_lbl,
+                'rule_name':    m.group('rule'),
+                'size':         size,
+                'unc_path':     m.group('unc'),
+                'host':         host,
+                'share':        share,
+                'path':         path,
+                'filename':     filename,
+                'matched_line': (m.group('match') or '').strip(),
+                'timestamp':    m.group('ts'),
+                'source':       'snaffler',
+            })
+
+    return findings
 
 
 def start_gui(host='127.0.0.1', port=5005, debug=False):
