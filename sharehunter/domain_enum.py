@@ -12,13 +12,11 @@ NTLM mode (use_kerberos=False):
   Tries plain LDAP (389) first; auto-falls back to LDAPS (636) if rejected.
 """
 
-import os
 import ssl
 import socket
 import ipaddress
 
 from ldap3 import Server, Connection, NTLM, ALL, SUBTREE, Tls
-from ldap3.core.exceptions import LDAPException
 
 
 def _base_dn_from_domain(domain: str) -> str:
@@ -26,10 +24,6 @@ def _base_dn_from_domain(domain: str) -> str:
 
 
 def _make_tls(validate_cert: bool = False) -> Tls:
-    ctx = ssl.create_default_context()
-    if not validate_cert:
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
     return Tls(validate=ssl.CERT_NONE if not validate_cert else ssl.CERT_REQUIRED)
 
 

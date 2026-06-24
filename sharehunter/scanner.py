@@ -5,22 +5,18 @@ Uses impacket for SMB/LDAP and applies Snaffler-equivalent rules.
 
 import os
 import re
-import sys
-import time
 import queue
 import threading
-import traceback
 from dataclasses import dataclass, field
 from typing import Optional, Callable, List
 from datetime import datetime
 
 from impacket.smbconnection import SMBConnection
-from impacket.smb3structs import FILE_READ_DATA, FILE_LIST_DIRECTORY
 from impacket.nmb import NetBIOSError
 from impacket.smbconnection import SessionError
 
 from sharehunter.rules import (
-    FILENAME_RULES, CONTENT_RULES, RATING_LABELS, ALL_RULES, SnaffleRule,
+    FILENAME_RULES, CONTENT_RULES, RATING_LABELS, SnaffleRule,
     SKIP_EXTENSIONS, should_skip_path,
 )
 from sharehunter import session as sess
@@ -400,25 +396,61 @@ class ShareHunter:
         shares = self._list_shares(conn, host)
         self.log(f"[+] Shares on {host}: {shares}", 'info')
 
+        if not shares:
+            try:
+                conn.logoff()
+            except Exception:
+                pass
+            if self.session is not None:
+                sess.mark_host_done(self.session, host)
+            return
+
         # Prioritise interesting share names
         def share_priority(s):
             return 0 if INTERESTING_SHARE_NAMES.search(s) else 1
 
         shares.sort(key=share_priority)
 
+        # Connection pool: reuse existing connections instead of opening one per
+        # share.  Pool size is capped at share_threads so we never open more
+        # connections than there are concurrent workers.
+        pool_size = min(self.share_threads, len(shares))
+        pool      = [conn]  # reuse the listing connection as the first slot
+        pool_lock = threading.Lock()
+
+        def _get_conn():
+            with pool_lock:
+                if pool:
+                    return pool.pop()
+            return self._connect(host)
+
+        def _return_conn(c):
+            if c is None:
+                return
+            with pool_lock:
+                if len(pool) < pool_size:
+                    pool.append(c)
+                    return
+            try:
+                c.logoff()
+            except Exception:
+                pass
+
         def share_worker(share_name):
-            wconn = self._connect(host)
+            wconn = _get_conn()
             if not wconn:
                 return
             try:
                 self._walk_share(wconn, host, share_name)
             except Exception as e:
                 self.log(f"[!] Error on \\\\{host}\\{share_name}: {e}", 'error')
-            finally:
                 try:
                     wconn.logoff()
                 except Exception:
                     pass
+                wconn = None
+            finally:
+                _return_conn(wconn)
 
         share_sem = threading.Semaphore(self.share_threads)
 
@@ -440,10 +472,15 @@ class ShareHunter:
         for t in share_thread_list:
             t.join()
 
-        try:
-            conn.logoff()
-        except Exception:
-            pass
+        # Drain and close any connections left in the pool
+        with pool_lock:
+            remaining = list(pool)
+            pool.clear()
+        for c in remaining:
+            try:
+                c.logoff()
+            except Exception:
+                pass
 
         if self.session is not None:
             sess.mark_host_done(self.session, host)

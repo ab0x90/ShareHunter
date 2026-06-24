@@ -15,7 +15,6 @@ import json
 import os
 import threading
 from datetime import datetime
-from typing import Optional
 
 _SESSIONS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'sessions')
 _lock = threading.Lock()
@@ -62,7 +61,7 @@ def load(scan_id: str) -> dict:
         return _default()
 
 
-def load_latest() -> Optional[dict]:
+def load_latest() -> dict | None:
     """Load the most recent session, or None if no sessions exist."""
     sessions = list_sessions()
     if not sessions:
@@ -140,7 +139,7 @@ def new_scan(creds: dict, params: dict, loot_dir: str, hosts: list) -> dict:
 def add_result(session: dict, result_dict: dict):
     with _lock:
         session['results'].append(result_dict)
-    if len(session['results']) % 25 == 0:
+    if len(session['results']) % 50 == 0:
         save(session)
 
 
@@ -150,7 +149,10 @@ def mark_host_done(session: dict, host: str):
             session['hosts_pending'].remove(host)
         if host not in session['hosts_completed']:
             session['hosts_completed'].append(host)
-    save(session)
+    # Save every 10 hosts rather than every host — mark_ended always does a
+    # final save so nothing is lost on scan completion.
+    if len(session['hosts_completed']) % 10 == 0:
+        save(session)
 
 
 def mark_downloaded(session: dict, unc_path: str, local_path: str):
@@ -175,10 +177,3 @@ def mark_ended(session: dict, stopped: bool = False):
     save(session)
 
 
-def exists() -> bool:
-    """True if at least one session file exists."""
-    return bool(list_sessions())
-
-
-def session_file_path(scan_id: str) -> str:
-    return _session_path(scan_id)

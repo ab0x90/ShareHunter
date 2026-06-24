@@ -5,12 +5,13 @@ Tab 2: Filter / search results
 """
 
 import os
+import re
 import threading
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify, send_file, abort
-from flask_socketio import SocketIO, emit
+from flask import Flask, render_template, request, jsonify, send_file
+from flask_socketio import SocketIO
 
-from sharehunter.rules import RATING_LABELS, RATING_COLORS
+from sharehunter.rules import RATING_LABELS
 from sharehunter import session as sess
 
 app = Flask(__name__, template_folder='../templates', static_folder='../static')
@@ -55,9 +56,7 @@ def _log_callback(msg: str, level: str = 'info'):
 
 @app.route('/')
 def index():
-    return render_template('index.html',
-                           rating_labels=RATING_LABELS,
-                           rating_colors=RATING_COLORS)
+    return render_template('index.html', rating_labels=RATING_LABELS)
 
 
 @app.route('/api/session-list')
@@ -126,6 +125,7 @@ def api_session_resume():
         def run_resumed():
             log_cb(f"[*] Resuming scan — {len(pending)} host(s) pending", 'info')
             log_cb(f"[*] Log file: {log_path}", 'info')
+            snaffler = None
             try:
                 snaffler = ShareHunter(
                     target='', hosts=pending,
@@ -178,7 +178,7 @@ def api_start():
     cli_creds = _scan_state.get('creds') or {}
 
     target        = data.get('target', '').strip()
-    target_domain = data.get('target_domain', '').strip()
+    target_domain = data.get('target_domain', '').strip().rstrip('.')
     username      = data.get('username', '').strip()      or cli_creds.get('username', '')
     domain        = data.get('domain', '').strip()        or cli_creds.get('domain', '')
     use_ldaps     = bool(data.get('ldaps', False))
@@ -254,6 +254,7 @@ def api_start():
         # Tell the browser where the log file is
         log_cb(f"[*] Log file: {log_path}", 'info')
 
+        snaffler = None
         try:
             hosts = None
             if target_domain:
@@ -340,7 +341,12 @@ def api_status():
     with _scan_state['lock']:
         count   = len(_scan_state['results'])
         scan_id = _scan_state['scan_id']
-    return jsonify({'running': _scan_state['running'], 'count': count, 'scan_id': scan_id})
+        params  = _scan_state.get('params') or {}
+    mode = 'domain' if params.get('target_domain') else 'specific'
+    return jsonify({'running': _scan_state['running'], 'count': count,
+                    'scan_id': scan_id, 'mode': mode,
+                    'target': params.get('target', ''),
+                    'target_domain': params.get('target_domain', '')})
 
 
 @app.route('/api/prefill')
@@ -372,26 +378,6 @@ def api_logs():
     with _scan_state['lock']:
         logs = list(_scan_state['logs'])
     return jsonify(logs)
-
-
-@app.route('/api/set-creds', methods=['POST'])
-def api_set_creds():
-    """Inject credentials into a running session (e.g. CLI-launched scans)."""
-    data = request.get_json(force=True)
-    scan_ts  = datetime.now().strftime('%Y%m%d_%H%M%S')
-    with _scan_state['lock']:
-        _scan_state['creds'] = {
-            'username': data.get('username', ''),
-            'password': data.get('password', ''),
-            'domain':   data.get('domain', ''),
-            'nthash':   data.get('nthash', ''),
-        }
-        # Only create a new loot dir if there isn't one already
-        if not _scan_state.get('loot_dir'):
-            loot_dir = os.path.join(_LOOT_BASE, scan_ts)
-            os.makedirs(loot_dir, exist_ok=True)
-            _scan_state['loot_dir'] = loot_dir
-    return jsonify({'ok': True, 'loot_dir': _scan_state['loot_dir']})
 
 
 @app.route('/api/download', methods=['POST'])
@@ -476,7 +462,6 @@ def api_download():
 
 def _sanitise(name: str) -> str:
     """Strip characters that are unsafe in filesystem paths."""
-    import re
     return re.sub(r'[\\/:*?"<>|]', '_', name)
 
 
@@ -515,8 +500,6 @@ def api_parse_log():
 
     Returns JSON list of parsed finding objects.
     """
-    import re as _re
-
     # ── Resolve the log file content ────────────────────────────────────────
     if request.content_type and 'multipart' in request.content_type:
         f = request.files.get('file')
@@ -543,7 +526,6 @@ def api_parse_log():
 
 def _parse_log_text(raw: str) -> list:
     # Parses ShareHunter and Snaffler log formats into structured finding dicts.
-    import re as _re
 
     RATING_MAP = {
         'Black': 0, 'black': 0,
@@ -555,41 +537,41 @@ def _parse_log_text(raw: str) -> list:
 
     # ── Pattern A: ShareHunter / ShareHunter-compatible Snaffler output ──────
     # [Red](Pass-In-Code)<165B>{\\host\share\path}[matched data]
-    PAT_SH = _re.compile(
+    PAT_SH = re.compile(
         r'^\[(?P<rating>Black|Red|Yellow|Green)\]'
         r'\((?P<rule>[^)]+)\)'
         r'<(?P<size>\d+)B?>'
         r'\{(?P<unc>[^}]+)\}'
         r'(?:\[(?P<match>.*)\])?',
-        _re.IGNORECASE
+        re.IGNORECASE
     )
 
     # ── Pattern B: Real Snaffler TSV/structured output ───────────────────────
     # [2024-01-01 12:00:00Z][Triage][Red][RuleName] {\\host\share\path} [match]
-    PAT_SNAF_TS = _re.compile(
+    PAT_SNAF_TS = re.compile(
         r'^\[(?P<ts>[^\]]{10,30})\]'
         r'\[(?:Triage|triage|INFO|WARN|ERROR)?\]'
         r'\[(?P<rating>Black|Red|Yellow|Green)\]'
         r'\[(?P<rule>[^\]]+)\]\s*'
         r'\{(?P<unc>[^}]+)\}'
         r'(?:\s*\[(?P<match>.*)\])?',
-        _re.IGNORECASE | _re.DOTALL
+        re.IGNORECASE | re.DOTALL
     )
 
     # ── Pattern C: Real Snaffler plain (no timestamp, bracket-only) ──────────
     # [0m][RuleName]  {\\host\share\path} [match]   — colour-prefix variants
-    PAT_SNAF_PLAIN = _re.compile(
+    PAT_SNAF_PLAIN = re.compile(
         r'^\[(?:0m|Black|Red|Yellow|Green|\d+m)\]'
         r'\[(?P<rule>[^\]]+)\]\s*'
         r'\{(?P<unc>[^}]+)\}'
         r'(?:\s*\[(?P<match>.*)\])?',
-        _re.IGNORECASE | _re.DOTALL
+        re.IGNORECASE | re.DOTALL
     )
 
     # ── Pattern D: Real Snaffler console output ───────────────────────────────
     # [DOMAIN\user@host] 2026-06-18 15:12:50Z [File] {Red}<RuleName|R|regex|size|date>(\\host\share\path) match
     # Only match [File] lines (not [Share] or [Info])
-    PAT_SNAF_REAL = _re.compile(
+    PAT_SNAF_REAL = re.compile(
         r'^\[(?P<ctx>[^\]]+)\]\s+'                          # [DOMAIN\user@host]
         r'(?P<ts>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}Z)\s+'  # timestamp
         r'\[File\]\s+'                                       # [File] only
@@ -598,7 +580,7 @@ def _parse_log_text(raw: str) -> list:
         r'(?:\|[^|]*\|[^|]*\|(?P<size>[^|]+)\|[^>]*)?>?'   # |R|regex|size|date> (optional)
         r'\((?P<unc>[^)]+)\)'                                # (\\host\share\path)
         r'(?:\s+(?P<match>.+))?',                            # match text
-        _re.IGNORECASE
+        re.IGNORECASE
     )
 
     def _split_unc(unc: str):
