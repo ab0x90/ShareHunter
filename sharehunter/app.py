@@ -30,6 +30,7 @@ _scan_state = {
     'lock':      threading.Lock(),
     'loot_dir':  None,   # set when a scan starts
     'session':   None,   # active session dict
+    'scan_id':   0,      # increments each time a new scan starts
 }
 
 
@@ -104,6 +105,7 @@ def api_session_resume():
         _scan_state['loot_dir'] = s.get('loot_dir') or _scan_state.get('loot_dir')
         _scan_state['creds']    = creds
         _scan_state['session']  = s
+        _scan_state['scan_id']  = _scan_state['scan_id'] + 1
 
     # Kick off a resumed scan in a background thread if there are pending hosts
     if pending:
@@ -232,6 +234,7 @@ def api_start():
         _scan_state['running']  = True
         _scan_state['loot_dir'] = loot_dir
         _scan_state['creds']    = creds
+        _scan_state['scan_id']  = _scan_state['scan_id'] + 1
 
     def run_scan():
         # Open a log file for this browser-initiated scan
@@ -315,7 +318,8 @@ def api_stop():
 @app.route('/api/results')
 def api_results():
     with _scan_state['lock']:
-        results = list(_scan_state['results'])
+        results  = list(_scan_state['results'])
+        scan_id  = _scan_state['scan_id']
     # Annotate each result with its download status from the session
     downloads = {}
     if _scan_state.get('session'):
@@ -328,14 +332,15 @@ def api_results():
         else:
             r['downloaded'] = False
             r['local_path'] = ''
-    return jsonify(results)
+    return jsonify({'scan_id': scan_id, 'results': results})
 
 
 @app.route('/api/status')
 def api_status():
     with _scan_state['lock']:
-        count = len(_scan_state['results'])
-    return jsonify({'running': _scan_state['running'], 'count': count})
+        count   = len(_scan_state['results'])
+        scan_id = _scan_state['scan_id']
+    return jsonify({'running': _scan_state['running'], 'count': count, 'scan_id': scan_id})
 
 
 @app.route('/api/prefill')
