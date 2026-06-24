@@ -76,7 +76,7 @@
     .tab-bar {
       background: var(--bg2);
       border-bottom: 1px solid var(--border);
-      display: flex;
+      display: flex; align-items: center;
       padding: 0 20px;
     }
     .tab-btn {
@@ -87,15 +87,22 @@
     }
     .tab-btn:hover { color: var(--text); }
     .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
-    .tab-content { display: none; height: calc(100vh - 110px); }
+    .tab-content { display: none; height: calc(100vh - 88px); }
     .tab-content.active { display: flex; flex-direction: column; }
+    /* mode toggle lives in the tab bar */
+    #mode-toggle-wrap {
+      margin-left: auto; display: flex; align-items: center; gap: 8px;
+    }
+    #mode-toggle-wrap .mode-locked-tip {
+      font-size: 11px; color: var(--text-dim); display: none;
+    }
 
-    /* ── Scan form — single compact row ── */
+    /* ── Scan form — single row ── */
     #scan-form {
       background: var(--bg2);
       border-bottom: 1px solid var(--border);
-      padding: 8px 16px;
-      display: flex; flex-wrap: nowrap; gap: 6px; align-items: center;
+      padding: 7px 16px;
+      display: flex; align-items: center; gap: 6px; flex-wrap: nowrap;
     }
     /* thin text inputs, no labels — placeholders carry the hint */
     #scan-form input[type=text],
@@ -113,9 +120,9 @@
     #scan-form input[name=nthash]        { width: 100px; }
     #scan-form input[name=target]        { width: 160px; }
     #scan-form input[name=target_domain] { width: 160px; }
-    #scan-form input[name=host_threads]  { width: 46px; }
-    #scan-form input[name=share_threads] { width: 46px; }
-    #scan-form input[name=depth]         { width: 46px; }
+    #scan-form input[name=host_threads]  { width: 58px; }
+    #scan-form input[name=share_threads] { width: 58px; }
+    #scan-form input[name=depth]         { width: 58px; }
     /* divider between logical groups */
     .sf-sep {
       width: 1px; height: 22px; background: var(--border);
@@ -354,28 +361,29 @@
   <button class="dismiss-btn" onclick="dismissBanner()">&#x2715;</button>
 </div>
 
-<!-- Tab bar -->
+<!-- Tab bar — mode toggle lives here, right-aligned -->
 <div class="tab-bar">
   <button class="tab-btn active" onclick="switchTab('live')">Live Output</button>
   <button class="tab-btn" onclick="switchTab('filter')">Filter Results</button>
+  <div id="mode-toggle-wrap">
+    <span class="mode-locked-tip" id="mode-locked-tip">stop scan to switch</span>
+    <div class="mode-toggle" id="mode-toggle">
+      <label id="lbl-specific" title="Scan a specific IP, CIDR, hostname, or file of targets">
+        <input type="radio" name="target_mode" value="specific" onchange="toggleTargetMode()">
+        <span>Host/CIDR</span>
+      </label>
+      <label id="lbl-domain" title="Enumerate all computers from a DC via LDAP, then scan them all">
+        <input type="radio" name="target_mode" value="domain" onchange="toggleTargetMode()">
+        <span>Domain enum</span>
+      </label>
+    </div>
+  </div>
 </div>
 
 <!-- ═══ LIVE TAB ═══ -->
 <div id="tab-live" class="tab-content active">
   <div id="form-wrap">
-    <!-- Single compact row -->
     <div id="scan-form">
-      <!-- Target mode pill toggle -->
-      <div class="mode-toggle" id="mode-toggle">
-        <label id="lbl-specific" class="checked" title="Scan a specific IP, CIDR, hostname, or file of targets">
-          <input type="radio" name="target_mode" value="specific" checked onchange="toggleTargetMode()">
-          <span>Host/CIDR</span>
-        </label>
-        <label id="lbl-domain" title="Enumerate all computers from a DC via LDAP, then scan them all">
-          <input type="radio" name="target_mode" value="domain" onchange="toggleTargetMode()">
-          <span>Domain enum</span>
-        </label>
-      </div>
       <!-- Target inputs — only one visible at a time -->
       <input type="text" name="target"        id="inp-target"        placeholder="IP / CIDR / host / file">
       <input type="text" name="target_domain" id="inp-target-domain" placeholder="DC hostname or IP" style="display:none">
@@ -488,12 +496,13 @@ const _dlState = new Map();
 // ── Polling fallback (works over SSH tunnels where WS events are lost) ─────
 let _pollInterval      = null;
 let _logOffset         = 0;
-let _wsWorking         = false;   // set true if WS actually delivers a result/log
 // Tracks how many results the SERVER currently holds for the active scan.
 // Separate from allResults.length because allResults may include historical
 // results loaded from a prior session file.
 let _serverResultCount = 0;
 let _currentScanId = null;
+let _scanRunning   = false;
+let _currentMode   = 'specific';
 
 function _mergePolledResults(payload) {
   const scan_id = payload.scan_id ?? null;
@@ -561,10 +570,9 @@ function stopPolling() {
 socket.on('connect',    () => addLog('[WS] Connected to ShareHunter', 'info'));
 socket.on('disconnect', () => addLog('[WS] Disconnected', 'error'));
 
-socket.on('log', d => { _wsWorking = true; addLog(d.msg, d.level); });
+socket.on('log', d => { addLog(d.msg, d.level); });
 
 socket.on('new_result', r => {
-  _wsWorking = true;
   // Annotate from persistent dl state before pushing
   if (_dlState.has(r.unc_path)) {
     r.downloaded  = true;
@@ -595,9 +603,12 @@ function switchTab(name) {
 }
 
 function setStatus(running) {
+  _scanRunning = running;
   const b = document.getElementById('status-badge');
   b.textContent = running ? 'RUNNING' : 'IDLE';
   b.className   = running ? 'running' : 'idle';
+  // Dim the mode toggle while scan runs so it's clear it's locked
+  document.getElementById('mode-toggle').style.opacity = running ? '0.5' : '1';
 }
 
 function updateCount() {
@@ -644,7 +655,19 @@ function getFormVal(name) {
 }
 
 function toggleTargetMode() {
-  const mode = document.querySelector('input[name=target_mode]:checked').value;
+  // Block mode switch while a scan is running
+  if (_scanRunning) {
+    // Revert the radio to whatever was checked before
+    const prev = _currentMode || 'specific';
+    document.querySelector(`input[name=target_mode][value=${prev}]`).checked = true;
+    document.getElementById('mode-locked-tip').style.display = 'inline';
+    setTimeout(() => { document.getElementById('mode-locked-tip').style.display = 'none'; }, 2500);
+    return;
+  }
+  const checked = document.querySelector('input[name=target_mode]:checked');
+  if (!checked) return;
+  const mode = checked.value;
+  _currentMode = mode;
   document.getElementById('inp-target').style.display        = mode === 'specific' ? '' : 'none';
   document.getElementById('inp-target-domain').style.display = mode === 'domain'   ? '' : 'none';
   document.getElementById('lbl-specific').classList.toggle('checked', mode === 'specific');
@@ -707,11 +730,6 @@ function onCredChange() {
     // FQDN domain with no host/CIDR target → switch to domain-enum mode
     const radio = document.querySelector('input[name=target_mode][value=domain]');
     if (!radio.checked) { radio.checked = true; toggleTargetMode(); }
-    if (!dcEl.value.trim()) {
-      dcEl.value = 'dc01.' + dom.toLowerCase().replace(/\.$/, '');
-      dcEl.style.borderColor = 'var(--accent)';
-      setTimeout(() => { dcEl.style.borderColor = ''; }, 1200);
-    }
   }
   // short NETBIOS name or host/CIDR already set → leave mode alone
 }
@@ -1200,6 +1218,17 @@ Promise.all([
 ]).then(([_resultsPayload, logs, status, prefill]) => {
   const results = _resultsPayload.results ?? _resultsPayload;
   if (_resultsPayload.scan_id != null) _currentScanId = _resultsPayload.scan_id;
+  // Restore mode from status (covers both CLI and GUI-started scans on refresh)
+  const initMode = status.mode || 'specific';
+  _currentMode = initMode;
+  document.querySelector(`input[name=target_mode][value=${initMode}]`).checked = true;
+  document.getElementById('lbl-specific').classList.toggle('checked', initMode === 'specific');
+  document.getElementById('lbl-domain').classList.toggle('checked',   initMode === 'domain');
+  document.getElementById('inp-target').style.display        = initMode === 'specific' ? '' : 'none';
+  document.getElementById('inp-target-domain').style.display = initMode === 'domain'   ? '' : 'none';
+  // Restore target values from status if prefill won't cover them (GUI-started scans)
+  if (status.target        && !prefill.target)        document.getElementById('inp-target').value        = status.target;
+  if (status.target_domain && !prefill.target_domain) document.getElementById('inp-target-domain').value = status.target_domain;
   prefillForm(prefill);
   // Restore in-flight / previously loaded results
   if (results.length) {
