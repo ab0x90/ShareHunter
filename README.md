@@ -21,6 +21,12 @@ A Python reimplementation of [Snaffler](https://github.com/SnaffCon/Snaffler) wi
 
 ---
 
+## Example 
+![execution](1.png)
+![live output](2.png)
+![filter view](3.png)
+
+---
 ## Installation
 
 ```bash
