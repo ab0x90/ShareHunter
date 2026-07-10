@@ -81,6 +81,7 @@ def _kerberos_enum(dc_fqdn: str, dc_ip: str, username: str, password: str,
     """
     try:
         from impacket.ldap import ldap as impacket_ldap, ldapasn1 as ldapasn1_impacket
+        from impacket.ldap.ldapasn1 import SimplePagedResultsControl
         from sharehunter.scanner import _parse_hash
     except ImportError as e:
         log(f'[Kerberos] impacket not available: {e}', 'error')
@@ -111,15 +112,31 @@ def _kerberos_enum(dc_fqdn: str, dc_ip: str, username: str, password: str,
     log('[LDAP] Kerberos bind successful', 'info')
 
     search_filter = '(&(objectClass=computer)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))'
+
+    # Active Directory caps a single search at MaxPageSize (default 1000) and
+    # returns sizeLimitExceeded when a domain has more objects than that. Attach
+    # a paged-results control so impacket follows the cookie and streams every
+    # page. sizeLimitExceeded is still tolerated as a fallback: impacket raises
+    # LDAPSearchError but carries the partial answers, which we recover below.
+    paged = SimplePagedResultsControl(criticality=True, size=1000, cookie='')
+    resp = None
     try:
         resp = conn.search(searchFilter=search_filter,
-                           attributes=['dNSHostName', 'sAMAccountName', 'operatingSystem'])
+                           attributes=['dNSHostName', 'sAMAccountName', 'operatingSystem'],
+                           searchControls=[paged])
+    except impacket_ldap.LDAPSearchError as e:
+        if 'sizeLimitExceeded' in str(e):
+            log('[LDAP] Server returned sizeLimitExceeded — using partial results', 'warn')
+            resp = e.getAnswers()
+        else:
+            log(f'[LDAP] Search failed: {e}', 'error')
+            return None
     except Exception as e:
         log(f'[LDAP] Search failed: {e}', 'error')
         return None
 
     hosts = []
-    for entry in resp:
+    for entry in resp or []:
         if not isinstance(entry, ldapasn1_impacket.SearchResultEntry):
             continue
         dns = ''
@@ -195,24 +212,38 @@ def _ntlm_enum(dc: str, user_str: str, auth_password: str, use_ldaps: bool,
     log(f'[LDAP] Base DN: {base_dn}', 'info')
 
     search_filter = '(&(objectClass=computer)(!(userAccountControl:1.2.840.113556.1.4.803:=2)))'
+    # Use a paged search: AD caps a plain search at MaxPageSize (default 1000)
+    # and returns sizeLimitExceeded on larger domains. paged_search follows the
+    # cookie across every page, yielding all computer objects.
+    hosts = []
     try:
-        conn.search(search_base=base_dn, search_filter=search_filter,
-                    search_scope=SUBTREE,
-                    attributes=['dnsHostName', 'sAMAccountName', 'operatingSystem'])
+        entries = conn.extend.standard.paged_search(
+            search_base=base_dn, search_filter=search_filter,
+            search_scope=SUBTREE,
+            attributes=['dnsHostName', 'sAMAccountName', 'operatingSystem'],
+            paged_size=1000, generator=True,
+        )
+        def _val(attrs, key):
+            v = attrs.get(key)
+            if isinstance(v, (list, tuple)):
+                v = v[0] if v else ''
+            return str(v or '')
+
+        for entry in entries:
+            if entry.get('type') != 'searchResEntry':
+                continue
+            attrs = entry.get('attributes', {})
+            dns = _val(attrs, 'dnsHostName')
+            sam = _val(attrs, 'sAMAccountName').rstrip('$')
+            os_ = _val(attrs, 'operatingSystem')
+            host = dns if dns and dns != 'None' else sam
+            if host and host != 'None':
+                hosts.append(host)
+                log(f'[LDAP]   Found: {host}  ({os_})', 'info')
     except Exception as e:
         log(f'[LDAP] Search failed: {e}', 'error')
         conn.unbind()
         return None
-
-    hosts = []
-    for entry in conn.entries:
-        dns = str(entry.dnsHostName) if entry.dnsHostName else ''
-        sam = str(entry.sAMAccountName).rstrip('$') if entry.sAMAccountName else ''
-        os_ = str(entry.operatingSystem) if entry.operatingSystem else ''
-        host = dns if dns and dns != 'None' else sam
-        if host and host != 'None':
-            hosts.append(host)
-            log(f'[LDAP]   Found: {host}  ({os_})', 'info')
 
     conn.unbind()
     log(f'[LDAP] Enumerated {len(hosts)} computer(s)', 'info')

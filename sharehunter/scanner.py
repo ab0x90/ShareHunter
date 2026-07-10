@@ -174,6 +174,61 @@ class ShareHunter:
 
     # ── Connection helpers ─────────────────────────────────────────────────
 
+    def _spn_name(self, host: str) -> str:
+        """
+        Resolve *host* to the FQDN that Kerberos SPNs are registered against.
+
+        impacket derives the SMB service principal (cifs/<remoteName>) from the
+        name passed to SMBConnection. SPNs exist only against a machine's FQDN,
+        so an IP or short hostname yields KDC_ERR_S_PRINCIPAL_UNKNOWN. We map the
+        target to its FQDN (rDNS for IPs, forward+rDNS for short names), preferring
+        a name under the auth domain, and fall back to the original on failure.
+        """
+        import socket, ipaddress
+
+        # Already an FQDN with more labels than the domain — use as-is.
+        if self.domain and host.lower().endswith('.' + self.domain.lower()):
+            return host
+
+        is_ip = True
+        try:
+            ipaddress.ip_address(host)
+        except ValueError:
+            is_ip = False
+
+        if not is_ip:
+            # Short hostname (no dots) — try to append/resolve to an FQDN.
+            if '.' in host:
+                return host  # already dotted; assume it's an FQDN
+            try:
+                ip = socket.gethostbyname(host)
+            except Exception:
+                return host
+        else:
+            ip = host
+
+        try:
+            primary, aliases, _ = socket.gethostbyaddr(ip)
+            candidates = [primary] + list(aliases)
+            if self.domain:
+                in_domain = [n for n in candidates
+                             if n.lower().endswith('.' + self.domain.lower())]
+                if in_domain:
+                    in_domain.sort(key=lambda n: len(n.split('.')), reverse=True)
+                    resolved = in_domain[0]
+                    self.log(f"[Kerberos] {host} → {resolved} for SMB service ticket", 'info')
+                    return resolved
+            # No domain-scoped name; take the longest FQDN-looking candidate.
+            dotted = [n for n in candidates if '.' in n]
+            if dotted:
+                dotted.sort(key=lambda n: len(n.split('.')), reverse=True)
+                self.log(f"[Kerberos] {host} → {dotted[0]} for SMB service ticket", 'info')
+                return dotted[0]
+        except Exception:
+            self.log(f"[Kerberos] Could not resolve FQDN for {host} — "
+                     f"Kerberos may fail (SPN requires FQDN)", 'warn')
+        return host
+
     def _connect(self, host: str) -> Optional[SMBConnection]:
         """
         Connect to *host* over SMB.  Auth preference order:
@@ -182,8 +237,11 @@ class ShareHunter:
           3. NTLM + password
         """
         try:
-            conn = SMBConnection(host, host, sess_port=445, timeout=10)
             if self.use_kerberos:
+                # remoteName drives the SPN (cifs/<fqdn>); remoteHost is the
+                # socket target, so we can still connect by the original IP.
+                spn_name = self._spn_name(host)
+                conn = SMBConnection(spn_name, host, sess_port=445, timeout=10)
                 conn.kerberosLogin(
                     self.username, self.password, self.domain,
                     lmhash='', nthash=self.nthash,
@@ -191,7 +249,10 @@ class ShareHunter:
                     kdcHost=self.dc_ip or None,
                     useCache=(not self.aes_key and not self.nthash and not self.password),
                 )
-            elif self.nthash:
+                return conn
+
+            conn = SMBConnection(host, host, sess_port=445, timeout=10)
+            if self.nthash:
                 lm, nt = _parse_hash(self.nthash)
                 conn.login(self.username, '', self.domain, lmhash=lm, nthash=nt)
             else:
