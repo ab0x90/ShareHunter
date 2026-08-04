@@ -41,101 +41,47 @@
     #status-badge.idle    { background: var(--bg3); border-color: var(--border); color: var(--text-dim); }
     #result-count { margin-left: auto; color: var(--text-dim); font-size: 12px; }
 
-    /* ── Session resume banner ── */
-    #session-banner {
-      display: none;
-      background: #1c2a3a;
-      border-bottom: 1px solid var(--accent);
-      padding: 10px 20px;
-      font-size: 12px;
-      color: var(--accent);
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-    #session-banner.visible { display: flex; }
-    #session-banner select {
-      background: #0d1a27; border: 1px solid var(--accent);
-      color: var(--accent); padding: 4px 8px; border-radius: 4px;
-      font-family: inherit; font-size: 12px; min-width: 340px;
+    /* ── Session picker (always visible in the header) ── */
+    #session-select {
+      background: var(--bg3); border: 1px solid var(--border);
+      color: var(--text); padding: 4px 8px; border-radius: 4px;
+      font-family: inherit; font-size: 12px; min-width: 320px;
       cursor: pointer;
     }
-    #session-banner select:focus { outline: none; }
-    #session-banner button {
-      padding: 4px 14px; border-radius: 4px; border: 1px solid var(--accent);
-      background: #243545; color: var(--accent); cursor: pointer;
-      font-family: inherit; font-size: 12px; font-weight: 600;
-    }
-    #session-banner button:hover { background: #2e4a60; }
-    #session-banner .dismiss-btn {
-      margin-left: auto; background: none; border-color: var(--border);
-      color: var(--text-dim); font-weight: normal;
-    }
+    #session-select:focus { outline: none; border-color: var(--accent); }
 
-    /* ── Tabs ── */
+    /* ── Top control bar (mode toggle only — no more tab switching) ── */
     .tab-bar {
       background: var(--bg2);
       border-bottom: 1px solid var(--border);
       display: flex; align-items: center;
       padding: 0 20px;
     }
-    .tab-btn {
-      padding: 10px 20px; cursor: pointer;
-      border: none; background: none; color: var(--text-dim);
-      border-bottom: 2px solid transparent; font-size: 13px;
-      font-family: inherit; transition: color .15s, border-color .15s;
-    }
-    .tab-btn:hover { color: var(--text); }
-    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
-    .tab-content { display: none; height: calc(100vh - 88px); }
-    .tab-content.active { display: flex; flex-direction: column; }
-    /* mode toggle lives in the tab bar */
+    #main-content { height: calc(100vh - 88px); display: flex; flex-direction: column; }
     #mode-toggle-wrap {
       margin-left: auto; display: flex; align-items: center; gap: 8px;
     }
-    #mode-toggle-wrap .mode-locked-tip {
-      font-size: 11px; color: var(--text-dim); display: none;
-    }
 
-    /* ── Scan form — single row ── */
-    #scan-form {
+    /* divider between logical groups (used by the ManSpider form) */
+    .sf-sep {
+      width: 1px; height: 22px; background: var(--border);
+      flex-shrink: 0; margin: 0 2px;
+    }
+    /* ── ManSpider loot-watch form ── */
+    #manspider-form {
       background: var(--bg2);
       border-bottom: 1px solid var(--border);
       padding: 7px 16px;
       display: flex; align-items: center; gap: 6px; flex-wrap: nowrap;
     }
-    /* thin text inputs, no labels — placeholders carry the hint */
-    #scan-form input[type=text],
-    #scan-form input[type=password],
-    #scan-form input[type=number] {
+    #manspider-form input[type=text],
+    #manspider-form input[type=number] {
       background: var(--bg3); border: 1px solid var(--border);
       color: var(--text); padding: 5px 7px; border-radius: 4px;
       font-family: inherit; font-size: 12px; height: 28px;
     }
-    #scan-form input:focus { outline: none; border-color: var(--accent); }
-    /* individual widths */
-    #scan-form input[name=domain]        { width: 110px; }
-    #scan-form input[name=username]      { width: 130px; }
-    #scan-form input[name=password]      { width: 110px; padding-right: 26px; }
-    #scan-form input[name=nthash]        { width: 100px; }
-    #scan-form input[name=target]        { width: 160px; }
-    #scan-form input[name=target_domain] { width: 160px; }
-    #scan-form input[name=host_threads]  { width: 58px; }
-    #scan-form input[name=share_threads] { width: 58px; }
-    #scan-form input[name=depth]         { width: 58px; }
-    /* divider between logical groups */
-    .sf-sep {
-      width: 1px; height: 22px; background: var(--border);
-      flex-shrink: 0; margin: 0 2px;
-    }
-    /* password eye */
-    .pw-wrap { position: relative; display: flex; align-items: center; }
-    .pw-eye {
-      position: absolute; right: 5px; cursor: pointer;
-      color: var(--text-dim); font-size: 12px; user-select: none;
-      background: none; border: none; padding: 0; line-height: 1;
-    }
-    .pw-eye:hover { color: var(--text); }
+    #manspider-form input:focus { outline: none; border-color: var(--accent); }
+    #manspider-form input[name=poll_interval] { width: 70px; }
     /* radio-style target mode — tiny pill toggles */
     .mode-toggle { display: flex; gap: 0; flex-shrink: 0; }
     .mode-toggle label {
@@ -151,37 +97,6 @@
       /* handled via JS class on label */
     }
     .mode-toggle label.checked { background: #1c2a3a; border-color: var(--accent); color: var(--accent); }
-    /* advanced-auth gear panel */
-    #adv-toggle {
-      background: none; border: 1px solid var(--border); border-radius: 4px;
-      color: var(--text-dim); padding: 4px 7px; cursor: pointer;
-      font-size: 13px; line-height: 1; height: 28px; flex-shrink: 0;
-    }
-    #adv-toggle:hover, #adv-toggle.open { color: var(--accent); border-color: var(--accent); }
-    #adv-panel {
-      display: none; position: absolute; top: 100%; left: 0; right: 0;
-      background: var(--bg2); border-bottom: 1px solid var(--border);
-      padding: 8px 16px; gap: 10px; align-items: center; flex-wrap: wrap;
-      z-index: 10;
-    }
-    #adv-panel.open { display: flex; }
-    #adv-panel input[type=text] {
-      background: var(--bg3); border: 1px solid var(--border);
-      color: var(--text); padding: 5px 7px; border-radius: 4px;
-      font-family: inherit; font-size: 12px; height: 28px; width: 180px;
-    }
-    #adv-panel input[type=text]:focus { outline: none; border-color: var(--accent); }
-    #adv-panel input[name=dc_ip] { width: 140px; }
-    .adv-check {
-      display: flex; align-items: center; gap: 5px;
-      font-size: 12px; color: var(--text-dim); cursor: pointer;
-      white-space: nowrap; user-select: none;
-    }
-    .adv-check input[type=checkbox] { accent-color: var(--accent); cursor: pointer; }
-    .adv-check:hover { color: var(--text); }
-    .adv-label { font-size: 11px; color: var(--text-dim); }
-    /* wrap the form + adv panel together so adv-panel can position relative to form */
-    #form-wrap { position: relative; }
     button.btn {
       padding: 6px 16px; border-radius: 4px; border: 1px solid;
       cursor: pointer; font-family: inherit; font-size: 12px; font-weight: 600;
@@ -193,22 +108,18 @@
     .btn-clear { background: var(--bg3); border-color: var(--border); color: var(--text-dim); }
     .btn-clear:hover { border-color: var(--text-dim); }
 
-    /* ── Live tab ── */
-    #log-area {
-      flex: 1; overflow-y: auto; padding: 10px 20px;
-      font-size: 12px; line-height: 1.6;
+    /* ── One-line status message (replaces the old scrolling log console) ── */
+    #status-msg {
+      font-size: 12px; padding: 6px 20px;
+      background: var(--bg2); border-bottom: 1px solid var(--border);
+      display: none; white-space: pre-wrap; word-break: break-all;
     }
-    .log-entry { padding: 1px 0; white-space: pre-wrap; word-break: break-all; }
-    .log-entry.result { color: var(--text); }
-    .log-entry.info   { color: var(--text-dim); }
-    .log-entry.error  { color: var(--red-clr); }
-    .log-entry.warn   { color: var(--yellow-clr); }
-    .rating-Black  { color: var(--black-clr); font-weight: bold; }
-    .rating-Red    { color: var(--red-clr);   font-weight: bold; }
-    .rating-Yellow { color: var(--yellow-clr);}
-    .rating-Green  { color: var(--green-clr); }
+    #status-msg.visible { display: block; }
+    #status-msg.info  { color: var(--text-dim); }
+    #status-msg.error { color: var(--red-clr); }
+    #status-msg.warn  { color: var(--yellow-clr); }
 
-    /* ── Results table (filter tab) ── */
+    /* ── Results table ── */
     #filter-bar {
       background: var(--bg2); border-bottom: 1px solid var(--border);
       padding: 10px 20px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
@@ -349,92 +260,43 @@
 <header>
   <h1>&#x1F50D; ShareHunter</h1>
   <span id="status-badge" class="idle">IDLE</span>
+  <select id="session-select" title="Select a session to view" onchange="onSessionSelectChange()">
+    <option value="">— no session loaded —</option>
+  </select>
   <span id="result-count">0 findings</span>
   <a href="/log-viewer" style="margin-left:auto;color:var(--text-dim);text-decoration:none;font-size:12px;padding:4px 10px;border:1px solid var(--border);border-radius:4px;" onmouseover="this.style.color='var(--accent)';this.style.borderColor='var(--accent)'" onmouseout="this.style.color='var(--text-dim)';this.style.borderColor='var(--border)'">&#x1F4C4; Log Viewer</a>
 </header>
 
-<!-- Session resume banner (shown on GUI-only startup when sessions exist) -->
-<div id="session-banner">
-  <span style="font-weight:600;white-space:nowrap">&#x1F4BE; Prior session:</span>
-  <select id="session-select" title="Select a session to resume"></select>
-  <button onclick="resumeSession()">&#x21BA; Resume</button>
-  <button class="dismiss-btn" onclick="dismissBanner()">&#x2715;</button>
-</div>
+<div id="status-msg"></div>
 
-<!-- Tab bar — mode toggle lives here, right-aligned -->
+<!-- Mode toggle bar — no more tab switching, this is just Session vs ManSpider -->
 <div class="tab-bar">
-  <button class="tab-btn active" onclick="switchTab('live')">Live Output</button>
-  <button class="tab-btn" onclick="switchTab('filter')">Filter Results</button>
   <div id="mode-toggle-wrap">
-    <span class="mode-locked-tip" id="mode-locked-tip">stop scan to switch</span>
     <div class="mode-toggle" id="mode-toggle">
-      <label id="lbl-specific" title="Scan a specific IP, CIDR, hostname, or file of targets">
-        <input type="radio" name="target_mode" value="specific" onchange="toggleTargetMode()">
-        <span>Host/CIDR</span>
+      <label id="lbl-session" title="View a loaded scan session">
+        <input type="radio" name="target_mode" value="session" onchange="toggleTargetMode()">
+        <span>Viewing Session</span>
       </label>
-      <label id="lbl-domain" title="Enumerate all computers from a DC via LDAP, then scan them all">
-        <input type="radio" name="target_mode" value="domain" onchange="toggleTargetMode()">
-        <span>Domain enum</span>
+      <label id="lbl-manspider" title="Watch a manspider loot directory and triage files it has already pulled down">
+        <input type="radio" name="target_mode" value="manspider" onchange="toggleTargetMode()">
+        <span>ManSpider Loot</span>
       </label>
     </div>
   </div>
 </div>
 
-<!-- ═══ LIVE TAB ═══ -->
-<div id="tab-live" class="tab-content active">
+<div id="main-content">
   <div id="form-wrap">
-    <div id="scan-form">
-      <!-- Target inputs — only one visible at a time -->
-      <input type="text" name="target"        id="inp-target"        placeholder="IP / CIDR / host / file">
-      <input type="text" name="target_domain" id="inp-target-domain" placeholder="DC hostname or IP" style="display:none">
-
+    <!-- ManSpider loot-watch controls — shown only in ManSpider Loot mode -->
+    <div id="manspider-form" style="display:none">
+      <input type="text" name="loot_dir" id="inp-loot-dir" placeholder="Loot directory" title="Directory manspider downloads matching files into" value="~/.manspider/loot" style="flex:1;min-width:260px">
+      <input type="number" name="poll_interval" id="inp-poll-interval" value="60" min="5" max="3600" title="Seconds between polls of the loot directory">
       <div class="sf-sep"></div>
-
-      <!-- Credentials -->
-      <input type="text"     name="domain"   placeholder="Domain"   title="Domain (CORP or corp.local)" oninput="onCredChange()">
-      <input type="text"     name="username" placeholder="Username"  title="Username — DOMAIN\user or user@domain.tld triggers auto-fill" oninput="onCredChange()">
-      <div class="pw-wrap">
-        <input type="password" name="password" placeholder="Password" title="Password" autocomplete="current-password">
-        <button type="button" class="pw-eye" onclick="togglePw(this)" title="Show/hide">&#x1F441;</button>
-      </div>
-      <input type="password" name="nthash"   placeholder="NT hash"   title="NT hash for pass-the-hash (optional)" autocomplete="off">
-
-      <div class="sf-sep"></div>
-
-      <!-- Thread / depth knobs -->
-      <input type="number" name="host_threads"  value="5"  min="1" max="50" title="Concurrent hosts">
-      <input type="number" name="share_threads" value="10" min="1" max="50" title="Concurrent shares/host">
-      <input type="number" name="depth"         value="10" min="1" max="30" title="Max directory depth">
-
-      <div class="sf-sep"></div>
-
-      <!-- Actions + advanced gear -->
-      <button class="btn btn-start" onclick="startScan()">&#x25B6; Start</button>
-      <button class="btn btn-stop"  onclick="stopScan()">&#x25A0; Stop</button>
-      <button class="btn btn-clear" onclick="clearLog()" title="Clear log">&#x1F5D1;</button>
-      <button id="adv-toggle" onclick="toggleAdv()" title="Advanced auth options">&#x2699;</button>
-    </div>
-
-    <!-- Advanced auth panel — hidden until gear clicked -->
-    <div id="adv-panel">
-      <span class="adv-label">Advanced auth:</span>
-      <label class="adv-check" title="Force LDAPS (port 636, TLS). Default: try plain LDAP first, auto-fall back to LDAPS.">
-        <input type="checkbox" name="ldaps" id="chk-ldaps"> LDAPS
-      </label>
-      <label class="adv-check" title="Kerberos (SASL/GSSAPI) for LDAP + SMB. Needs a ccache or creds above.">
-        <input type="checkbox" name="kerberos" id="chk-kerberos" onchange="onKerberosChange()"> Kerberos
-      </label>
-      <input type="text" name="aes_key" id="inp-aes-key" placeholder="AES key (hex, implies Kerberos)" autocomplete="off" style="display:none">
-      <input type="text" name="dc_ip"   placeholder="DC IP (optional pin / KDC)" title="Pin a specific DC IP, required for Kerberos when DNS is unavailable">
+      <button class="btn btn-start" onclick="startManspiderWatch()">&#x25B6; Start Watching</button>
+      <button class="btn btn-stop"  onclick="stopManspiderWatch()">&#x25A0; Stop</button>
     </div>
   </div>
 
-  <!-- Log stream -->
-  <div id="log-area"></div>
-</div>
-
-<!-- ═══ FILTER TAB ═══ -->
-<div id="tab-filter" class="tab-content">
   <div id="filter-bar">
     <input type="text" id="filter-text" placeholder="Search path, filename, match, rule…" oninput="scheduleFilter()">
     <select id="filter-share" onchange="scheduleFilter(true)">
@@ -495,14 +357,12 @@ const _dlState = new Map();
 
 // ── Polling fallback (works over SSH tunnels where WS events are lost) ─────
 let _pollInterval      = null;
-let _logOffset         = 0;
 // Tracks how many results the SERVER currently holds for the active scan.
 // Separate from allResults.length because allResults may include historical
 // results loaded from a prior session file.
 let _serverResultCount = 0;
 let _currentScanId = null;
-let _scanRunning   = false;
-let _currentMode   = 'specific';
+let _currentMode   = 'session';
 
 function _mergePolledResults(payload) {
   const scan_id = payload.scan_id ?? null;
@@ -516,13 +376,12 @@ function _mergePolledResults(payload) {
     _knownHosts.clear();
     _knownShares.clear();
     _serverResultCount = 0;
-    clearLog();
     document.getElementById('vt-rows').innerHTML = ''; document.getElementById('vt-sizer').style.height = '0px';
     ['filter-host','filter-share'].forEach(id => {
       const sel = document.getElementById(id);
       while (sel.options.length > 1) sel.remove(1);
     });
-    addLog('[*] New scan detected — display reset', 'info');
+    setStatusMsg('[*] New scan detected — display reset', 'info');
   }
   if (scan_id !== null) _currentScanId = scan_id;
 
@@ -531,31 +390,30 @@ function _mergePolledResults(payload) {
 
   newItems.forEach(r => {
     if (_dlState.has(r.unc_path)) { r.downloaded = true; r.local_path = _dlState.get(r.unc_path).local_path || ''; }
+    else if (r.downloaded) { _dlState.set(r.unc_path, { state: 'done', local_path: r.local_path || '' }); }
     allResults.push(r);
-    addResultToLog(r);
     updateFilterDropdowns(r);
   });
   if (newItems.length) {
     updateCount();
-    if (document.getElementById('tab-filter').classList.contains('active')) scheduleFilter();
+    scheduleFilter();
   }
 }
 
+// Polling only ever applies to ManSpider Loot mode now — session viewing is
+// a static snapshot with no auto-refresh (see sharehunter/app.py). ManSpider
+// pushes new finds via socket immediately, so this is just a fallback for
+// environments (e.g. SSH tunnels) where WS events drop.
 function startPolling() {
-  if (_pollInterval) return;
+  if (_pollInterval || _currentMode !== 'manspider') return;
   _pollInterval = setInterval(() => {
-    fetch('/api/status').then(r => r.json()).then(d => {
+    fetch('/api/status?mode=manspider').then(r => r.json()).then(d => {
       setStatus(d.running);
       if (!d.running) stopPolling();
     }).catch(() => {});
 
-    fetch('/api/results').then(r => r.json()).then(data => {
+    fetch('/api/results?mode=manspider').then(r => r.json()).then(data => {
       _mergePolledResults(data);
-    }).catch(() => {});
-
-    fetch('/api/logs').then(r => r.json()).then(logs => {
-      logs.slice(_logOffset).forEach(l => { if (l.level !== 'result') addLog(l.msg, l.level); });
-      _logOffset = logs.length;
     }).catch(() => {});
   }, 2500);
 }
@@ -567,85 +425,42 @@ function stopPolling() {
 }
 
 // ── Socket events ──────────────────────────────────────────────────────────
-socket.on('connect',    () => addLog('[WS] Connected to ShareHunter', 'info'));
-socket.on('disconnect', () => addLog('[WS] Disconnected', 'error'));
+socket.on('connect',    () => setStatusMsg('[WS] Connected to ShareHunter', 'info'));
+socket.on('disconnect', () => setStatusMsg('[WS] Disconnected', 'error'));
 
-socket.on('log', d => { addLog(d.msg, d.level); });
+socket.on('log', d => { setStatusMsg(d.msg, d.level); });
 
 socket.on('new_result', r => {
   // Annotate from persistent dl state before pushing
   if (_dlState.has(r.unc_path)) {
     r.downloaded  = true;
     r.local_path  = _dlState.get(r.unc_path).local_path || '';
+  } else if (r.downloaded) {
+    _dlState.set(r.unc_path, { state: 'done', local_path: r.local_path || '' });
   }
   allResults.push(r);
-  addResultToLog(r);
   updateCount();
   updateFilterDropdowns(r);
-  if (document.getElementById('tab-filter').classList.contains('active')) {
-    scheduleFilter();
-  }
+  scheduleFilter();
 });
 
-socket.on('scan_done', d => {
-  stopPolling();
-  setStatus(false);
-  addLog(`[✓] Scan finished — ${d.total} finding(s)`, 'info');
-});
-
-// ── UI helpers ─────────────────────────────────────────────────────────────
-function switchTab(name) {
-  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-  document.getElementById('tab-' + name).classList.add('active');
-  document.querySelectorAll('.tab-btn')[name === 'live' ? 0 : 1].classList.add('active');
-  if (name === 'filter') scheduleFilter(true);
-}
-
+// Only ManSpider watching has a real "running" concept now — session
+// viewing is always a static snapshot.
 function setStatus(running) {
-  _scanRunning = running;
   const b = document.getElementById('status-badge');
-  b.textContent = running ? 'RUNNING' : 'IDLE';
+  b.textContent = running ? 'WATCHING' : 'IDLE';
   b.className   = running ? 'running' : 'idle';
-  // Dim the mode toggle while scan runs so it's clear it's locked
-  document.getElementById('mode-toggle').style.opacity = running ? '0.5' : '1';
 }
 
 function updateCount() {
   document.getElementById('result-count').textContent = allResults.length + ' findings';
 }
 
-// ── Log area ───────────────────────────────────────────────────────────────
-function addLog(msg, level) {
-  const area = document.getElementById('log-area');
-  const div  = document.createElement('div');
-  div.className = 'log-entry ' + (level || 'info');
-  div.textContent = msg;
-  area.appendChild(div);
-  area.scrollTop = area.scrollHeight;
-}
-
-function addResultToLog(r) {
-  const area = document.getElementById('log-area');
-  const div  = document.createElement('div');
-  div.className = 'log-entry result';
-
-  const ratingSpan = document.createElement('span');
-  ratingSpan.className = 'rating-' + r.rating_label;
-  ratingSpan.textContent = '[' + r.rating_label + ']';
-
-  const rest = document.createElement('span');
-  const matchPart = r.matched_line ? `[${r.matched_line.substring(0,200)}]` : '';
-  rest.textContent = `(${r.rule_name})<${r.size}B>{\\\\${r.host}\\${r.share}\\${r.path}}${matchPart}`;
-
-  div.appendChild(ratingSpan);
-  div.appendChild(rest);
-  area.appendChild(div);
-  area.scrollTop = area.scrollHeight;
-}
-
-function clearLog() {
-  document.getElementById('log-area').innerHTML = '';
+// ── Status message (one line, replaces the old scrolling log console) ──────
+function setStatusMsg(msg, level) {
+  const el = document.getElementById('status-msg');
+  el.textContent = msg;
+  el.className = 'visible ' + (level || 'info');
 }
 
 // ── Scan control ───────────────────────────────────────────────────────────
@@ -655,116 +470,40 @@ function getFormVal(name) {
 }
 
 function toggleTargetMode() {
-  // Block mode switch while a scan is running
-  if (_scanRunning) {
-    // Revert the radio to whatever was checked before
-    const prev = _currentMode || 'specific';
-    document.querySelector(`input[name=target_mode][value=${prev}]`).checked = true;
-    document.getElementById('mode-locked-tip').style.display = 'inline';
-    setTimeout(() => { document.getElementById('mode-locked-tip').style.display = 'none'; }, 2500);
-    return;
-  }
   const checked = document.querySelector('input[name=target_mode]:checked');
   if (!checked) return;
   const mode = checked.value;
   _currentMode = mode;
-  document.getElementById('inp-target').style.display        = mode === 'specific' ? '' : 'none';
-  document.getElementById('inp-target-domain').style.display = mode === 'domain'   ? '' : 'none';
-  document.getElementById('lbl-specific').classList.toggle('checked', mode === 'specific');
-  document.getElementById('lbl-domain').classList.toggle('checked',   mode === 'domain');
+  document.getElementById('lbl-session').classList.toggle('checked',    mode === 'session');
+  document.getElementById('lbl-manspider').classList.toggle('checked',  mode === 'manspider');
+  document.getElementById('manspider-form').style.display = mode === 'manspider' ? '' : 'none';
+
+  // Switching which results table is displayed — reset the view. Polling
+  // only ever applies to ManSpider mode (startPolling() no-ops otherwise),
+  // so this also resumes it if a watch is already running in the background.
+  stopPolling();
+  allResults = [];
+  _dlState.clear();
+  _filteredRows = [];
+  _knownHosts.clear();
+  _knownShares.clear();
+  updateCount();
+  document.getElementById('vt-rows').innerHTML = ''; document.getElementById('vt-sizer').style.height = '0px';
+  ['filter-host','filter-share'].forEach(id => {
+    const sel = document.getElementById(id);
+    while (sel.options.length > 1) sel.remove(1);
+  });
+  _serverResultCount = 0;
+  _currentScanId = null;
+  loadResults();
+  startPolling();
 }
 
-function togglePw(btn) {
-  const inp = btn.previousElementSibling;
-  if (inp.type === 'password') { inp.type = 'text';     btn.style.opacity = '1';   }
-  else                         { inp.type = 'password'; btn.style.opacity = '0.5'; }
-}
-
-function toggleAdv() {
-  const panel = document.getElementById('adv-panel');
-  const btn   = document.getElementById('adv-toggle');
-  const open  = panel.classList.toggle('open');
-  btn.classList.toggle('open', open);
-}
-
-function onKerberosChange() {
-  const on = document.getElementById('chk-kerberos').checked;
-  document.getElementById('inp-aes-key').style.display = on ? '' : 'none';
-}
-
-// ── Auto-fill target fields from credentials ───────────────────────────────
-// Rules:
-//   - If username contains '\' (e.g. CORP\alice) or '@' (alice@corp.local),
-//     extract and fill the Domain field if empty.
-//   - If domain looks like a FQDN (has dots), auto-select Domain enum mode
-//     and fill the DC field with "dc.<domain>" if still empty.
-//   - If domain is a NETBIOS short name (no dots), stay on Specific mode.
-function onCredChange() {
-  const userEl = document.querySelector('[name=username]');
-  const domEl  = document.querySelector('[name=domain]');
-  const dcEl   = document.getElementById('inp-target-domain');
-
-  let user = userEl.value.trim();
-  let dom  = domEl.value.trim();
-
-  // Extract domain from DOMAIN\user or user@domain.tld
-  let derived = '';
-  if (user.includes('\\'))     derived = user.split('\\')[0];
-  else if (user.includes('@')) derived = user.split('@')[1];
-
-  if (derived && !dom) {
-    domEl.value = derived;
-    dom = derived;
-  }
-
-  if (!dom) return;
-
-  // Only auto-switch to domain-enum and suggest DC if the domain looks like
-  // a valid FQDN (at least two non-empty labels, no trailing dot) AND the
-  // user hasn't already entered a target in the host/CIDR field.
-  const domParts = dom.replace(/\.$/, '').split('.');
-  const isFQDN   = domParts.length >= 2 && domParts.every(p => p.length > 0);
-  const hostVal  = document.querySelector('[name=target]')?.value?.trim() || '';
-
-  if (isFQDN && !hostVal) {
-    // FQDN domain with no host/CIDR target → switch to domain-enum mode
-    const radio = document.querySelector('input[name=target_mode][value=domain]');
-    if (!radio.checked) { radio.checked = true; toggleTargetMode(); }
-  }
-  // short NETBIOS name or host/CIDR already set → leave mode alone
-}
-
-function startScan() {
-  const mode     = document.querySelector('input[name=target_mode]:checked').value;
-  const kerberos = document.getElementById('chk-kerberos').checked;
-  const aesKey   = getFormVal('aes_key').trim();
-
-  // If CLI set the password/hash and the user left the field blank,
-  // send a sentinel so the server uses its in-memory value.
-  const pwEl = document.querySelector('[name=password]');
-  const nhEl = document.querySelector('[name=nthash]');
-  const pwVal = pwEl.value || (pwEl.dataset.cliSet ? '__CLI__' : '');
-  const nhVal = nhEl.value || (nhEl.dataset.cliSet ? '__CLI__' : '');
-
+function startManspiderWatch() {
   const payload = {
-    target:        mode === 'specific' ? getFormVal('target')        : '',
-    target_domain: mode === 'domain'   ? getFormVal('target_domain') : '',
-    domain:        getFormVal('domain'),
-    username:      getFormVal('username'),
-    password:      pwVal,
-    nthash:        nhVal,
-    ldaps:         document.getElementById('chk-ldaps').checked,
-    kerberos:      kerberos || !!aesKey,
-    aes_key:       aesKey,
-    dc_ip:         getFormVal('dc_ip').trim(),
-    host_threads:  parseInt(getFormVal('host_threads'))  || 5,
-    share_threads: parseInt(getFormVal('share_threads')) || 10,
-    depth:         parseInt(getFormVal('depth'))         || 10,
+    loot_dir:      getFormVal('loot_dir').trim(),
+    poll_interval: parseInt(getFormVal('poll_interval')) || 60,
   };
-
-  const displayTarget = mode === 'domain'
-    ? `domain enum via ${payload.target_domain}`
-    : payload.target;
 
   allResults = [];
   _dlState.clear();
@@ -772,42 +511,39 @@ function startScan() {
   _knownHosts.clear();
   _knownShares.clear();
   updateCount();
-  clearLog();
   document.getElementById('vt-rows').innerHTML = ''; document.getElementById('vt-sizer').style.height = '0px';
   ['filter-host','filter-share'].forEach(id => {
     const sel = document.getElementById(id);
     while (sel.options.length > 1) sel.remove(1);
   });
-  dismissBanner();
 
-  fetch('/api/start', {
+  fetch('/api/manspider-start', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify(payload),
   }).then(r => r.json()).then(d => {
     if (d.ok) {
       setStatus(true);
-      addLog(`[*] Scan started → ${displayTarget}`, 'info');
+      setStatusMsg(`[*] Watching ${d.loot_dir} (poll every ${payload.poll_interval}s)`, 'info');
       startPolling();
     } else {
-      addLog('[!] ' + d.error, 'error');
+      setStatusMsg('[!] ' + d.error, 'error');
     }
   });
 }
 
-function stopScan() {
-  fetch('/api/stop', { method: 'POST' }).then(() => {
+function stopManspiderWatch() {
+  fetch('/api/manspider-stop', { method: 'POST' }).then(() => {
     stopPolling();
     setStatus(false);
-    addLog('[*] Stop requested', 'warn');
+    setStatusMsg('[*] Watch stopped', 'warn');
   });
 }
 
-// ── Session banner ─────────────────────────────────────────────────────────
-function dismissBanner() {
-  document.getElementById('session-banner').classList.remove('visible');
-}
-
+// ── Session picker (always-visible header control) ─────────────────────────
+// This viewer never launches a scan itself — "loading" a session just points
+// the viewer at an existing sessions/<scan_id>.session.json written by
+// sharehunter_scan.py, possibly still being appended to elsewhere.
 function _fmtSession(s) {
   const dt  = s.started_at ? s.started_at.replace('T', ' ').slice(0, 16) : '?';
   const who = s.username   ? s.username + '@'                              : '';
@@ -816,90 +552,66 @@ function _fmtSession(s) {
   return `${dt}  ${who}${tgt}  — ${s.result_count} result(s)${end}`;
 }
 
-function showSessionBanner(sessions) {
-  if (!sessions.length) return;
+function populateSessionSelect(sessions, selectedScanId) {
   const sel = document.getElementById('session-select');
   sel.innerHTML = '';
+  sel.add(new Option('— no session loaded —', ''));
   sessions.forEach(s => {
     const opt = new Option(_fmtSession(s), s.scan_id);
+    if (s.scan_id === selectedScanId) opt.selected = true;
     sel.add(opt);
   });
-  document.getElementById('session-banner').classList.add('visible');
 }
 
-function resumeSession() {
+function onSessionSelectChange() {
   const scan_id = document.getElementById('session-select').value;
-  dismissBanner();
+  if (!scan_id) return;
+  loadSession(scan_id);
+}
 
+function loadSession(scan_id) {
   allResults = [];
   _dlState.clear();
   _filteredRows = [];
   _knownHosts.clear();
   _knownShares.clear();
   updateCount();
-  clearLog();
   document.getElementById('vt-rows').innerHTML = ''; document.getElementById('vt-sizer').style.height = '0px';
   ['filter-host','filter-share'].forEach(id => {
     const sel = document.getElementById(id);
     while (sel.options.length > 1) sel.remove(1);
   });
+  _serverResultCount = 0;
+  _currentScanId = null;
 
-  fetch('/api/session-resume', {
+  fetch('/api/session-load', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ scan_id }),
   }).then(r => r.json()).then(d => {
-    if (!d.ok) { addLog('[!] Resume failed: ' + d.error, 'error'); return; }
+    if (!d.ok) { setStatusMsg('[!] Load failed: ' + d.error, 'error'); return; }
+    const tag = d.complete ? '' : ' [incomplete — scan may still be running elsewhere; reselect to refresh]';
+    setStatusMsg(`[✓] Loaded session ${d.scan_id} — target: ${d.target || '?'}${tag}`, 'info');
+    loadResults();
+  });
+}
 
-    Object.entries(d.downloads || {}).forEach(([unc, info]) => {
-      _dlState.set(unc, { state: 'done', local_path: info.local_path || '' });
-    });
+// Shared by initial page load and every session switch — fetches the
+// current mode's results and populates the table.
+function loadResults() {
+  const qs = _currentMode === 'manspider' ? '?mode=manspider' : '';
+  return fetch('/api/results' + qs).then(r => r.json()).then(payload => {
+    const results = payload.results ?? payload;
+    if (payload.scan_id != null) _currentScanId = payload.scan_id;
 
-    allResults = (d.results || []).map(r => {
-      if (_dlState.has(r.unc_path)) {
-        r.downloaded = true;
-        r.local_path = _dlState.get(r.unc_path).local_path || '';
-      }
-      return r;
+    results.forEach(r => {
+      if (r.downloaded) _dlState.set(r.unc_path, { state: 'done', local_path: r.local_path || '' });
     });
-
-    // Batch log entries — don't hammer the DOM with thousands of individual appends
-    const logArea = document.getElementById('log-area');
-    const frag = document.createDocumentFragment();
-    allResults.forEach(r => {
-      updateFilterDropdowns(r);
-      const div = document.createElement('div');
-      div.className = 'log-entry result';
-      const span = document.createElement('span');
-      span.className = 'rating-' + r.rating_label;
-      span.textContent = '[' + r.rating_label + ']';
-      const rest = document.createElement('span');
-      const matchPart = r.matched_line ? `[${r.matched_line.substring(0,200)}]` : '';
-      rest.textContent = `(${r.rule_name})<${r.size}B>{\\\\${r.host}\\${r.share}\\${r.path}}${matchPart}`;
-      div.appendChild(span); div.appendChild(rest);
-      frag.appendChild(div);
-    });
-    logArea.appendChild(frag);
-    logArea.scrollTop = logArea.scrollHeight;
+    allResults = results;
+    _serverResultCount = results.length;
+    results.forEach(updateFilterDropdowns);
     updateCount();
-
-    // _serverResultCount = how many results the server currently holds for this scan.
-    // The poll will slice from this offset so only NEW results get appended to the display.
-    _serverResultCount = allResults.length;
-    _logOffset = 0;
-
-    if (d.resuming) {
-      addLog(`[✓] Session loaded — ${allResults.length} prior result(s). Resuming scan against ${d.pending} pending host(s)…`, 'info');
-      setStatus(true);
-    } else if (d.live) {
-      addLog(`[✓] Synced live scan — ${allResults.length} result(s) so far`, 'info');
-      setStatus(true);
-    } else {
-      addLog(`[✓] Session loaded — ${allResults.length} result(s). All hosts completed.`, 'info');
-      setStatus(false);
-    }
-    stopPolling();
-    startPolling();
+    scheduleFilter(true);
   });
 }
 
@@ -1155,125 +867,29 @@ function fmtSize(n) {
   return (n/1048576).toFixed(1) + ' MB';
 }
 
-// ── On load: show session picker only when GUI started with no credentials ──
-// "No credentials" = no scan running and no results already in memory,
-// which is the state when launched as: python sharehunter.py (no -t/-u).
-// If a CLI scan is already running, the status poll will pick that up and
-// startPolling() will begin — no need to show old sessions.
+// ── On load ──────────────────────────────────────────────────────────────
+// This viewer never launches a scan, so "on load" just means: find out
+// whether sharehunter_web.py was started with --session/--latest (already
+// loaded server-side by the time the page renders) or with nothing, and
+// populate the always-visible session picker either way.
+_currentMode = 'session';
 
-// ── Prefill form from CLI args ─────────────────────────────────────────────
-function prefillForm(d) {
-  if (!d.ok) return;
+setStatus(false);
 
-  // Credentials
-  if (d.username) document.querySelector('[name=username]').value = d.username;
-  if (d.domain)   document.querySelector('[name=domain]').value   = d.domain;
-  // Password/hash: server only tells us whether they exist, doesn't send the value.
-  // Show a placeholder that makes clear the credential is loaded server-side.
-  if (d.has_password) {
-    const pw = document.querySelector('[name=password]');
-    pw.placeholder = '(set via CLI)';
-    pw.dataset.cliSet = '1';   // flag so startScan knows not to send blank
-  }
-  if (d.has_nthash) {
-    const nh = document.querySelector('[name=nthash]');
-    nh.placeholder = '(set via CLI)';
-    nh.dataset.cliSet = '1';
-  }
-
-  // Target — prefer target_domain over target
-  if (d.target_domain) {
-    document.getElementById('inp-target-domain').value = d.target_domain;
-    const radio = document.querySelector('input[name=target_mode][value=domain]');
-    radio.checked = true;
-    toggleTargetMode();
-  } else if (d.target) {
-    document.getElementById('inp-target').value = d.target;
-  }
-
-  // Threads / depth
-  if (d.host_threads)  document.querySelector('[name=host_threads]').value  = d.host_threads;
-  if (d.share_threads) document.querySelector('[name=share_threads]').value = d.share_threads;
-  if (d.depth)         document.querySelector('[name=depth]').value         = d.depth;
-
-  // Advanced auth
-  if (d.use_ldaps)    document.getElementById('chk-ldaps').checked    = true;
-  if (d.use_kerberos) { document.getElementById('chk-kerberos').checked = true; onKerberosChange(); }
-  if (d.dc_ip)        document.querySelector('[name=dc_ip]').value     = d.dc_ip;
-
-  // Flash the fields to show they were auto-filled
-  const filled = ['domain','username','target','target_domain','host_threads','share_threads','depth'];
-  filled.forEach(n => {
-    const el = document.querySelector(`[name=${n}]`);
-    if (el && el.value) { el.style.borderColor = 'var(--accent)'; setTimeout(() => { el.style.borderColor = ''; }, 1500); }
-  });
-}
-
-// On load: restore results, seed log offset, start polling or show session picker
 Promise.all([
-  fetch('/api/results').then(r => r.json()),
-  fetch('/api/logs').then(r => r.json()),
   fetch('/api/status').then(r => r.json()),
-  fetch('/api/prefill').then(r => r.json()).catch(() => ({ok: false})),
-]).then(([_resultsPayload, logs, status, prefill]) => {
-  const results = _resultsPayload.results ?? _resultsPayload;
-  if (_resultsPayload.scan_id != null) _currentScanId = _resultsPayload.scan_id;
-  // Restore mode from status (covers both CLI and GUI-started scans on refresh)
-  const initMode = status.mode || 'specific';
-  _currentMode = initMode;
-  document.querySelector(`input[name=target_mode][value=${initMode}]`).checked = true;
-  document.getElementById('lbl-specific').classList.toggle('checked', initMode === 'specific');
-  document.getElementById('lbl-domain').classList.toggle('checked',   initMode === 'domain');
-  document.getElementById('inp-target').style.display        = initMode === 'specific' ? '' : 'none';
-  document.getElementById('inp-target-domain').style.display = initMode === 'domain'   ? '' : 'none';
-  // Restore target values from status if prefill won't cover them (GUI-started scans)
-  if (status.target        && !prefill.target)        document.getElementById('inp-target').value        = status.target;
-  if (status.target_domain && !prefill.target_domain) document.getElementById('inp-target-domain').value = status.target_domain;
-  prefillForm(prefill);
-  // Restore in-flight / previously loaded results
-  if (results.length) {
-    results.forEach(r => {
-      if (r.downloaded) _dlState.set(r.unc_path, { state: 'done', local_path: r.local_path || '' });
-    });
-    allResults = results;
-    _serverResultCount = results.length;
-    // Batch-append all log entries in a single fragment
-    const logArea = document.getElementById('log-area');
-    const frag = document.createDocumentFragment();
-    results.forEach(r => {
-      updateFilterDropdowns(r);
-      const div = document.createElement('div');
-      div.className = 'log-entry result';
-      const span = document.createElement('span');
-      span.className = 'rating-' + r.rating_label;
-      span.textContent = '[' + r.rating_label + ']';
-      const rest = document.createElement('span');
-      const matchPart = r.matched_line ? `[${r.matched_line.substring(0,200)}]` : '';
-      rest.textContent = `(${r.rule_name})<${r.size}B>{\\\\${r.host}\\${r.share}\\${r.path}}${matchPart}`;
-      div.appendChild(span); div.appendChild(rest);
-      frag.appendChild(div);
-    });
-    logArea.appendChild(frag);
-    logArea.scrollTop = logArea.scrollHeight;
-    updateCount();
-  }
+  fetch('/api/session-list').then(r => r.json()),
+]).then(([status, sessions]) => {
+  populateSessionSelect(sessions, status.loaded ? status.session_id : '');
+  document.getElementById('lbl-session').classList.add('checked');
+  document.querySelector('input[name=target_mode][value=session]').checked = true;
 
-  // Restore log entries and seed offset
-  logs.filter(l => l.level !== 'result').forEach(l => addLog(l.msg, l.level));
-  _logOffset = logs.length;
+  if (!status.loaded) return;
 
-  setStatus(status.running);
-
-  if (status.running) {
-    // CLI-launched scan already running — sync results then start polling
-    startPolling();
-    addLog('[*] Scan in progress — live feed active', 'info');
-  } else if (!results.length) {
-    // GUI-only startup with no active scan and no results — show session picker
-    fetch('/api/session-list').then(r => r.json()).then(sessions => {
-      if (sessions.length) showSessionBanner(sessions);
-    });
-  }
+  loadResults().then(() => {
+    const tag = status.complete ? '' : ' [incomplete — scan may still be running elsewhere; reselect to refresh]';
+    setStatusMsg(`[✓] Loaded session ${status.session_id} — ${status.count} result(s)${tag}`, 'info');
+  });
 });
 </script>
 </body>

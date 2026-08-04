@@ -9,6 +9,9 @@ The session captures:
   - all results found so far
   - which hosts have been completed / are pending
   - which files have been downloaded (unc_path -> local loot path)
+  - a periodic heartbeat timestamp, purely as a "last seen" diagnostic —
+    nothing currently reads it programmatically, the web viewer only ever
+    loads a session as a static snapshot.
 """
 
 import json
@@ -30,7 +33,9 @@ def _default() -> dict:
         'scan_id':    None,
         'started_at': None,
         'ended_at':   None,
+        'heartbeat':  None,
         'loot_dir':   None,
+        'log_path':   None,
         'creds': {
             'username': '',
             'password': '',
@@ -161,6 +166,18 @@ def mark_downloaded(session: dict, unc_path: str, local_path: str):
             'local_path': local_path,
             'ts': datetime.now().isoformat(),
         }
+    save(session)
+
+
+def heartbeat(session: dict):
+    """Stamp the session as alive right now and persist it.
+
+    Called on a short timer (~every 5s) by the running scan process — kept
+    separate from the result/host-count save cadence so a scan that's gone
+    quiet (e.g. walking one huge share) still reads as "running" to anyone
+    watching the session file.
+    """
+    session['heartbeat'] = datetime.now().isoformat()
     save(session)
 
 

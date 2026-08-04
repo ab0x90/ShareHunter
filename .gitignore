@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Scan output — keep the directories (.gitkeep) but not their contents
+logs/*
+!logs/.gitkeep
+loot/*
+!loot/.gitkeep
+sessions/*
+!sessions/.gitkeep
