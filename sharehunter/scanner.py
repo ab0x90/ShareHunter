@@ -389,7 +389,7 @@ class ShareHunter:
     def run(self):
         if self.hosts is not None:
             hosts = self.hosts
-            self.log(f"[ShareHunter] Scanning {len(hosts)} host(s) from domain enumeration", 'info')
+            self.log(f"[ShareHunter] Scanning {len(hosts)} host(s)", 'info')
         else:
             self.log(f"[ShareHunter] Targeting {self.target}", 'info')
             hosts = self._resolve_targets()

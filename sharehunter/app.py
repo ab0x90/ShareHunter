@@ -1,5 +1,16 @@
 """
-Flask + SocketIO web GUI for ShareHunter.
+Flask + SocketIO web viewer for ShareHunter.
+
+This process never scans anything itself — it only reads what
+sharehunter_scan.py has written to disk (sessions/*.session.json,
+loot/<scan_id>/, logs/*.log) and lets you browse it. A loaded session is a
+static snapshot: whatever was on disk at load time, no auto-refresh — pick a
+different (or freshly-started) session from the header dropdown, or reload
+the page, to see newer data. The one live activity this process runs
+directly is the ManSpider loot-directory watcher, which is a pure filesystem
+poller with its own start/stop and live-updating table, independent of
+whatever session happens to be loaded.
+
 Tab 1: Live results stream
 Tab 2: Filter / search results
 """
@@ -22,36 +33,40 @@ socketio = SocketIO(app, async_mode='eventlet', cors_allowed_origins='*')
 _LOOT_BASE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'loot')
 _LOGS_BASE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'logs')
 
-# Shared scan state
-_scan_state = {
-    'running':   False,
-    'snaffler':  None,
-    'results':   [],
-    'logs':      [],
-    'lock':      threading.Lock(),
-    'loot_dir':  None,   # set when a scan starts
-    'session':   None,   # active session dict
-    'scan_id':   0,      # increments each time a new scan starts
+# The currently-loaded session — a static snapshot, read once at load time.
+# 'load_id' is a local counter (distinct from the session's own string
+# scan_id) so the browser can detect "a different session was just loaded"
+# and reset its display.
+_view_state = {
+    'session':  None,
+    'load_id':  0,
+    'lock':     threading.Lock(),
+}
+
+# Separate state for the ManSpider loot watcher — a live filesystem poller
+# that can run independently of (and at the same time as) viewing a session,
+# since neither one launches an SMB scan in this process.
+_manspider_state = {
+    'running':  False,
+    'watcher':  None,
+    'results':  [],
+    'lock':     threading.Lock(),
+    'loot_dir': None,
+    'scan_id':  0,
 }
 
 
-def _result_callback(result):
+def _manspider_result_callback(result, local_path=''):
     d = result.to_dict()
-    with _scan_state['lock']:
-        _scan_state['results'].append(d)
-    if _scan_state.get('session') is not None:
-        sess.add_result(_scan_state['session'], d)
+    d['local_path'] = local_path
+    d['downloaded'] = True  # already sitting on disk — nothing to fetch
+    with _manspider_state['lock']:
+        _manspider_state['results'].append(d)
     socketio.emit('new_result', d)
 
 
 def _log_callback(msg: str, level: str = 'info'):
-    entry = {'msg': msg, 'level': level}
-    with _scan_state['lock']:
-        _scan_state['logs'].append(entry)
-        if len(_scan_state['logs']) > 2000:
-            _scan_state['logs'] = _scan_state['logs'][-2000:]
-    if level != 'result':
-        socketio.emit('log', entry)
+    socketio.emit('log', {'msg': msg, 'level': level})
 
 
 @app.route('/')
@@ -65,24 +80,12 @@ def api_session_list():
     return jsonify(sess.list_sessions())
 
 
-@app.route('/api/session-resume', methods=['POST'])
-def api_session_resume():
-    """Load a session and re-launch the scan against any pending hosts.
+@app.route('/api/session-load', methods=['POST'])
+def api_session_load():
+    """Load a session read-only for viewing (no scanning is ever launched).
 
     POST body: { scan_id: '...' }  (optional — uses latest if omitted)
-
-    If a scan is already running, just returns the live results so the browser
-    can sync up without interfering with the active scan.
     """
-    from sharehunter.scanner import ShareHunter
-
-    # Scan already running — just hand back live results
-    if _scan_state['running']:
-        with _scan_state['lock']:
-            results   = list(_scan_state['results'])
-            downloads = (_scan_state.get('session') or {}).get('downloads', {})
-        return jsonify({'ok': True, 'live': True, 'results': results, 'downloads': downloads})
-
     data    = request.get_json(force=True) or {}
     scan_id = data.get('scan_id', '').strip()
 
@@ -95,236 +98,37 @@ def api_session_resume():
         if s is None:
             return jsonify({'ok': False, 'error': 'No session files found'})
 
-    pending = s.get('hosts_pending', [])
-    creds   = s.get('creds', {})
-
-    # Load prior results into scan state so /api/results serves them immediately
-    with _scan_state['lock']:
-        _scan_state['results']  = list(s.get('results', []))
-        _scan_state['loot_dir'] = s.get('loot_dir') or _scan_state.get('loot_dir')
-        _scan_state['creds']    = creds
-        _scan_state['session']  = s
-        _scan_state['scan_id']  = _scan_state['scan_id'] + 1
-
-    # Kick off a resumed scan in a background thread if there are pending hosts
-    if pending:
-        os.makedirs(_LOGS_BASE, exist_ok=True)
-        scan_ts  = s.get('scan_id', datetime.now().strftime('%Y%m%d_%H%M%S'))
-        log_path = os.path.join(_LOGS_BASE, f'sharehunter_{scan_ts}_resumed.log')
-        log_fh   = open(log_path, 'a', encoding='utf-8', buffering=1)
-
-        def result_cb(result):
-            log_fh.write(result.to_snaffler_line() + '\n')
-            _result_callback(result)
-
-        def log_cb(msg, level='info'):
-            if level != 'result':
-                log_fh.write(msg + '\n')
-            _log_callback(msg, level)
-
-        def run_resumed():
-            log_cb(f"[*] Resuming scan — {len(pending)} host(s) pending", 'info')
-            log_cb(f"[*] Log file: {log_path}", 'info')
-            snaffler = None
-            try:
-                snaffler = ShareHunter(
-                    target='', hosts=pending,
-                    username=creds.get('username', ''),
-                    password=creds.get('password', ''),
-                    domain=creds.get('domain', ''),
-                    nthash=creds.get('nthash', ''),
-                    use_kerberos=creds.get('use_kerberos', False),
-                    aes_key=creds.get('aes_key', ''),
-                    dc_ip=creds.get('dc_ip', ''),
-                    host_threads=s.get('scan_params', {}).get('host_threads', 5),
-                    share_threads=s.get('scan_params', {}).get('share_threads', 10),
-                    max_depth=s.get('scan_params', {}).get('depth', 10),
-                    result_callback=result_cb,
-                    log_callback=log_cb,
-                    session=s,
-                )
-                _scan_state['snaffler'] = snaffler
-                snaffler.run()
-            except Exception as e:
-                log_cb(f"[!] Resumed scan error: {e}", 'error')
-            finally:
-                stopped = snaffler is not None and snaffler._stop_event.is_set()
-                _scan_state['running']  = False
-                _scan_state['snaffler'] = None
-                sess.mark_ended(s, stopped=stopped)
-                log_fh.close()
-                socketio.emit('scan_done', {'total': len(_scan_state['results'])})
-
-        _scan_state['running'] = True
-        t = threading.Thread(target=run_resumed, daemon=True)
-        t.start()
+    with _view_state['lock']:
+        _view_state['session'] = s
+        _view_state['load_id'] = _view_state['load_id'] + 1
+        load_id = _view_state['load_id']
 
     return jsonify({
-        'ok':       True,
-        'live':     bool(pending),   # tells the browser a scan just started
-        'resuming': bool(pending),
-        'pending':  len(pending),
-        'results':  _scan_state['results'],
-        'downloads': s.get('downloads', {}),
+        'ok':      True,
+        'scan_id': s['scan_id'],
+        'load_id': load_id,
+        'complete': bool(s.get('ended_at')),
+        'target':  s.get('scan_params', {}).get('target')
+                   or s.get('scan_params', {}).get('target_domain', ''),
     })
-
-
-@app.route('/api/start', methods=['POST'])
-def api_start():
-    from sharehunter.scanner import ShareHunter
-    from sharehunter.domain_enum import get_domain_computers
-    data = request.get_json(force=True)
-
-    cli_creds = _scan_state.get('creds') or {}
-
-    target        = data.get('target', '').strip()
-    target_domain = data.get('target_domain', '').strip().rstrip('.')
-    username      = data.get('username', '').strip()      or cli_creds.get('username', '')
-    domain        = data.get('domain', '').strip()        or cli_creds.get('domain', '')
-    use_ldaps     = bool(data.get('ldaps', False))
-    use_kerberos  = bool(data.get('kerberos', False))     or cli_creds.get('use_kerberos', False)
-    aes_key       = data.get('aes_key', '').strip()
-    dc_ip         = data.get('dc_ip', '').strip()         or cli_creds.get('dc_ip', '')
-    host_threads  = int(data.get('host_threads', 5))
-    share_threads = int(data.get('share_threads', 10))
-    depth         = int(data.get('depth', 10))
-
-    # '__CLI__' sentinel means "use the value the CLI already loaded server-side"
-    raw_pw    = data.get('password', '')
-    raw_nh    = data.get('nthash', '').strip()
-    password  = cli_creds.get('password', '') if raw_pw    == '__CLI__' else raw_pw
-    nthash    = cli_creds.get('nthash', '')   if raw_nh    == '__CLI__' else raw_nh
-
-    if aes_key:
-        use_kerberos = True
-
-    if not (target or target_domain) or not username:
-        return jsonify({'ok': False, 'error': 'target (or target-domain) and username are required'})
-
-    if _scan_state['running']:
-        return jsonify({'ok': False, 'error': 'Scan already running'})
-
-    # Create a timestamped loot directory for this scan
-    scan_ts  = datetime.now().strftime('%Y%m%d_%H%M%S')
-    loot_dir = os.path.join(_LOOT_BASE, scan_ts)
-    os.makedirs(loot_dir, exist_ok=True)
-
-    creds = {
-        'username':     username,
-        'password':     password,
-        'domain':       domain,
-        'nthash':       nthash,
-        'use_kerberos': use_kerberos,
-        'aes_key':      aes_key,
-        'dc_ip':        dc_ip,
-    }
-    params = {
-        'target':        target,
-        'target_domain': target_domain,
-        'use_ldaps':     use_ldaps,
-        'host_threads':  host_threads,
-        'share_threads': share_threads,
-        'depth':         depth,
-    }
-
-    # Reset state
-    with _scan_state['lock']:
-        _scan_state['results']  = []
-        _scan_state['logs']     = []
-        _scan_state['running']  = True
-        _scan_state['loot_dir'] = loot_dir
-        _scan_state['creds']    = creds
-        _scan_state['scan_id']  = _scan_state['scan_id'] + 1
-
-    def run_scan():
-        # Open a log file for this browser-initiated scan
-        os.makedirs(_LOGS_BASE, exist_ok=True)
-        log_path = os.path.join(_LOGS_BASE, f'sharehunter_{scan_ts}.log')
-        log_fh = open(log_path, 'a', encoding='utf-8', buffering=1)
-
-        def result_cb(result):
-            log_fh.write(result.to_snaffler_line() + '\n')
-            _result_callback(result)
-
-        def log_cb(msg, level='info'):
-            if level != 'result':
-                log_fh.write(msg + '\n')
-            _log_callback(msg, level)
-
-        # Tell the browser where the log file is
-        log_cb(f"[*] Log file: {log_path}", 'info')
-
-        snaffler = None
-        try:
-            hosts = None
-            if target_domain:
-                log_cb(f"[*] Enumerating computers from DC: {target_domain}", 'info')
-                hosts = get_domain_computers(
-                    dc=target_domain, username=username, password=password,
-                    domain=domain, nthash=nthash,
-                    use_ldaps=use_ldaps,
-                    use_kerberos=use_kerberos,
-                    aes_key=aes_key,
-                    log_callback=log_cb,
-                )
-                if not hosts:
-                    log_cb('[!] No hosts returned from domain enumeration', 'error')
-                    return
-
-            # Initialise session after we know the host list
-            s = sess.new_scan(creds, params, loot_dir, hosts or [target])
-            with _scan_state['lock']:
-                _scan_state['session'] = s
-
-            snaffler = ShareHunter(
-                target=target, hosts=hosts,
-                username=username, password=password,
-                domain=domain, nthash=nthash,
-                use_kerberos=use_kerberos,
-                aes_key=aes_key,
-                dc_ip=dc_ip,
-                host_threads=host_threads, share_threads=share_threads,
-                max_depth=depth,
-                result_callback=result_cb,
-                log_callback=log_cb,
-                session=s,
-            )
-            _scan_state['snaffler'] = snaffler
-            snaffler.run()
-        except Exception as e:
-            log_cb(f"[!] Scan error: {e}", 'error')
-        finally:
-            stopped = snaffler is not None and snaffler._stop_event.is_set()
-            _scan_state['running'] = False
-            _scan_state['snaffler'] = None
-            if _scan_state.get('session') is not None:
-                sess.mark_ended(_scan_state['session'], stopped=stopped)
-            log_fh.close()
-            socketio.emit('scan_done', {'total': len(_scan_state['results'])})
-
-    t = threading.Thread(target=run_scan, daemon=True)
-    t.start()
-    return jsonify({'ok': True})
-
-
-@app.route('/api/stop', methods=['POST'])
-def api_stop():
-    sn = _scan_state.get('snaffler')
-    if sn:
-        sn.stop()
-    _scan_state['running'] = False
-    return jsonify({'ok': True})
 
 
 @app.route('/api/results')
 def api_results():
-    with _scan_state['lock']:
-        results  = list(_scan_state['results'])
-        scan_id  = _scan_state['scan_id']
-    # Annotate each result with its download status from the session
-    downloads = {}
-    if _scan_state.get('session'):
-        downloads = _scan_state['session'].get('downloads', {})
+    if request.args.get('mode') == 'manspider':
+        with _manspider_state['lock']:
+            results = list(_manspider_state['results'])
+            scan_id = _manspider_state['scan_id']
+        return jsonify({'scan_id': scan_id, 'results': results})
+
+    with _view_state['lock']:
+        session = _view_state.get('session')
+        load_id = _view_state['load_id']
+    if session is None:
+        return jsonify({'scan_id': load_id, 'results': []})
+
+    downloads = session.get('downloads', {})
+    results   = list(session.get('results', []))
     for r in results:
         unc = r.get('unc_path', '')
         if unc in downloads:
@@ -333,62 +137,102 @@ def api_results():
         else:
             r['downloaded'] = False
             r['local_path'] = ''
-    return jsonify({'scan_id': scan_id, 'results': results})
+    return jsonify({'scan_id': load_id, 'results': results})
 
 
 @app.route('/api/status')
 def api_status():
-    with _scan_state['lock']:
-        count   = len(_scan_state['results'])
-        scan_id = _scan_state['scan_id']
-        params  = _scan_state.get('params') or {}
-    mode = 'domain' if params.get('target_domain') else 'specific'
-    return jsonify({'running': _scan_state['running'], 'count': count,
-                    'scan_id': scan_id, 'mode': mode,
-                    'target': params.get('target', ''),
-                    'target_domain': params.get('target_domain', '')})
+    if request.args.get('mode') == 'manspider':
+        with _manspider_state['lock']:
+            count   = len(_manspider_state['results'])
+            scan_id = _manspider_state['scan_id']
+        return jsonify({'running': _manspider_state['running'], 'count': count,
+                        'scan_id': scan_id, 'mode': 'manspider',
+                        'target': _manspider_state.get('loot_dir', '') or ''})
 
+    with _view_state['lock']:
+        session = _view_state.get('session')
+        load_id = _view_state['load_id']
 
-@app.route('/api/prefill')
-def api_prefill():
-    """Return CLI-supplied credentials and scan params so the GUI can pre-populate its form."""
-    creds  = _scan_state.get('creds')  or {}
-    params = _scan_state.get('params') or {}
-    if not creds and not params:
-        return jsonify({'ok': False})
+    if session is None:
+        return jsonify({'count': 0, 'scan_id': load_id,
+                        'mode': 'session', 'target': '', 'loaded': False})
+
+    params = session.get('scan_params', {})
     return jsonify({
-        'ok':           True,
-        'username':     creds.get('username', ''),
-        'domain':       creds.get('domain', ''),
-        'has_password': bool(creds.get('password', '')),
-        'has_nthash':   bool(creds.get('nthash', '')),
-        'use_kerberos': creds.get('use_kerberos', False),
-        'dc_ip':        creds.get('dc_ip', ''),
-        'target':       params.get('target', ''),
-        'target_domain':params.get('target_domain', ''),
-        'host_threads': params.get('host_threads', 5),
-        'share_threads':params.get('share_threads', 10),
-        'depth':        params.get('depth', 10),
-        'use_ldaps':    params.get('use_ldaps', False),
+        'complete':  bool(session.get('ended_at')),
+        'count':     len(session.get('results', [])),
+        'scan_id':   load_id,
+        'mode':      'session',
+        'loaded':    True,
+        'session_id': session.get('scan_id', ''),
+        'target':    params.get('target') or params.get('target_domain', ''),
+        'hosts_total':     len(session.get('hosts_total', [])),
+        'hosts_completed': len(session.get('hosts_completed', [])),
     })
 
 
-@app.route('/api/logs')
-def api_logs():
-    with _scan_state['lock']:
-        logs = list(_scan_state['logs'])
-    return jsonify(logs)
+@app.route('/api/manspider-start', methods=['POST'])
+def api_manspider_start():
+    """Start (or restart) watching a manspider loot directory.
+
+    POST body: { "loot_dir": "/home/user/.manspider/loot", "poll_interval": 60 }
+    """
+    from sharehunter.manspider_watch import ManSpiderWatcher, DEFAULT_LOOT_DIR
+
+    if _manspider_state['running']:
+        return jsonify({'ok': False, 'error': 'Already watching'})
+
+    data          = request.get_json(force=True) or {}
+    loot_dir      = (data.get('loot_dir') or '').strip() or DEFAULT_LOOT_DIR
+    loot_dir      = os.path.expanduser(loot_dir)
+    poll_interval = int(data.get('poll_interval') or 60)
+
+    if not os.path.isdir(loot_dir):
+        return jsonify({'ok': False, 'error': f'Directory not found: {loot_dir}'})
+
+    with _manspider_state['lock']:
+        _manspider_state['results']  = []
+        _manspider_state['running']  = True
+        _manspider_state['loot_dir'] = loot_dir
+        _manspider_state['scan_id']  = _manspider_state['scan_id'] + 1
+
+    watcher = ManSpiderWatcher(
+        loot_dir=loot_dir,
+        poll_interval=poll_interval,
+        result_callback=_manspider_result_callback,
+        log_callback=_log_callback,
+    )
+    _manspider_state['watcher'] = watcher
+    watcher.start()
+
+    return jsonify({'ok': True, 'loot_dir': loot_dir})
+
+
+@app.route('/api/manspider-stop', methods=['POST'])
+def api_manspider_stop():
+    w = _manspider_state.get('watcher')
+    if w:
+        w.stop()
+    _manspider_state['running'] = False
+    return jsonify({'ok': True})
 
 
 @app.route('/api/download', methods=['POST'])
 def api_download():
     """
-    Fetch a file from a remote SMB share, save it under the current loot
-    directory, and serve it back to the browser as an attachment.
+    Fetch a file from a remote SMB share, save it under the loaded session's
+    loot directory, and serve it back to the browser as an attachment. Uses
+    the credentials sharehunter_scan.py stored in the session file.
 
     POST body: { "host": "...", "share": "...", "path": "...", "filename": "..." }
     """
     import eventlet.tpool
+
+    with _view_state['lock']:
+        session = _view_state.get('session')
+    if session is None:
+        return jsonify({'ok': False, 'error': 'No session loaded'}), 400
 
     data     = request.get_json(force=True)
     host     = data.get('host', '').strip()
@@ -399,19 +243,15 @@ def api_download():
     if not all([host, share, path, filename]):
         return jsonify({'ok': False, 'error': 'host, share, path and filename are required'}), 400
 
-    loot_dir = _scan_state.get('loot_dir')
-    if not loot_dir:
-        # Fallback if called outside of an active scan session
-        loot_dir = os.path.join(_LOOT_BASE, 'manual')
-        os.makedirs(loot_dir, exist_ok=True)
+    loot_dir = session.get('loot_dir') or os.path.join(_LOOT_BASE, 'manual')
+    os.makedirs(loot_dir, exist_ok=True)
 
-    # Mirror the UNC structure: loot/<ts>/<host>/<share>/<subpath>/
     rel_dir   = os.path.dirname(path).lstrip('\\/').replace('\\', os.sep).replace('/', os.sep)
     save_dir  = os.path.join(loot_dir, _sanitise(host), _sanitise(share), rel_dir)
     os.makedirs(save_dir, exist_ok=True)
     save_path = os.path.join(save_dir, _sanitise(filename))
 
-    creds    = _scan_state.get('creds', {})
+    creds    = session.get('creds', {})
     username = creds.get('username', '')
     password = creds.get('password', '')
     domain   = creds.get('domain', '')
@@ -446,11 +286,12 @@ def api_download():
 
     _log_callback(f"[LOOT] Saved: {save_path}  ({len(file_bytes)} bytes)", 'info')
 
-    # Record in session
+    # Record in the session file — note this can race with the scan process's
+    # own periodic saves if the scan is still running elsewhere, since both
+    # write the whole session.json rather than merging.
     clean_path = path.lstrip('\\')
     unc_path = f"\\\\{host}\\{share}\\{clean_path}"
-    if _scan_state.get('session') is not None:
-        sess.mark_downloaded(_scan_state['session'], unc_path, save_path)
+    sess.mark_downloaded(session, unc_path, save_path)
 
     return send_file(
         save_path,
@@ -500,7 +341,6 @@ def api_parse_log():
 
     Returns JSON list of parsed finding objects.
     """
-    # ── Resolve the log file content ────────────────────────────────────────
     if request.content_type and 'multipart' in request.content_type:
         f = request.files.get('file')
         if not f:
@@ -533,7 +373,7 @@ def _parse_log_text(raw: str) -> list:
         'Yellow':2, 'yellow':2,
         'Green': 3, 'green': 3,
     }
-    RATING_LABELS = {0: 'Black', 1: 'Red', 2: 'Yellow', 3: 'Green'}
+    RATING_LABELS_LOCAL = {0: 'Black', 1: 'Red', 2: 'Yellow', 3: 'Green'}
 
     # ── Pattern A: ShareHunter / ShareHunter-compatible Snaffler output ──────
     # [Red](Pass-In-Code)<165B>{\\host\share\path}[matched data]
@@ -585,7 +425,7 @@ def _parse_log_text(raw: str) -> list:
 
     def _split_unc(unc: str):
         unc = unc.lstrip('\\').lstrip('/')
-        parts = _re.split(r'[/\\]', unc, maxsplit=2)
+        parts = re.split(r'[/\\]', unc, maxsplit=2)
         host  = parts[0] if len(parts) > 0 else ''
         share = parts[1] if len(parts) > 1 else ''
         path  = parts[2] if len(parts) > 2 else ''
@@ -600,7 +440,7 @@ def _parse_log_text(raw: str) -> list:
 
         m = PAT_SH.match(line)
         if m:
-            rating_label = RATING_LABELS.get(RATING_MAP.get(m.group('rating'), 3), 'Green')
+            rating_label = RATING_LABELS_LOCAL.get(RATING_MAP.get(m.group('rating'), 3), 'Green')
             host, share, path, filename = _split_unc(m.group('unc'))
             findings.append({
                 'rating':       RATING_MAP.get(m.group('rating'), 3),
@@ -612,7 +452,7 @@ def _parse_log_text(raw: str) -> list:
                 'share':        share,
                 'path':         path,
                 'filename':     filename,
-                'matched_line': (m.group('match') or '').strip('﻿'),
+                'matched_line': (m.group('match') or '').strip('\ufeff'),
                 'timestamp':    '',
                 'source':       'sharehunter',
             })
@@ -620,7 +460,7 @@ def _parse_log_text(raw: str) -> list:
 
         m = PAT_SNAF_TS.match(line)
         if m:
-            rating_label = RATING_LABELS.get(RATING_MAP.get(m.group('rating'), 3), 'Green')
+            rating_label = RATING_LABELS_LOCAL.get(RATING_MAP.get(m.group('rating'), 3), 'Green')
             host, share, path, filename = _split_unc(m.group('unc'))
             findings.append({
                 'rating':       RATING_MAP.get(m.group('rating'), 3),
@@ -632,7 +472,7 @@ def _parse_log_text(raw: str) -> list:
                 'share':        share,
                 'path':         path,
                 'filename':     filename,
-                'matched_line': (m.group('match') or '').strip('﻿'),
+                'matched_line': (m.group('match') or '').strip('\ufeff'),
                 'timestamp':    m.group('ts'),
                 'source':       'snaffler',
             })
@@ -651,7 +491,7 @@ def _parse_log_text(raw: str) -> list:
                 'share':        share,
                 'path':         path,
                 'filename':     filename,
-                'matched_line': (m.group('match') or '').strip('﻿'),
+                'matched_line': (m.group('match') or '').strip('\ufeff'),
                 'timestamp':    '',
                 'source':       'snaffler',
             })
@@ -660,7 +500,7 @@ def _parse_log_text(raw: str) -> list:
         m = PAT_SNAF_REAL.match(line)
         if m:
             rating     = RATING_MAP.get(m.group('rating'), 3)
-            rating_lbl = RATING_LABELS.get(rating, 'Green')
+            rating_lbl = RATING_LABELS_LOCAL.get(rating, 'Green')
             size_str   = (m.group('size') or '0').strip()
             # size may be "73MB", "32B", "71.4MB" — convert to bytes int
             try:
@@ -691,6 +531,29 @@ def _parse_log_text(raw: str) -> list:
             })
 
     return findings
+
+
+def load_initial_session(scan_id: str = None, latest: bool = False):
+    """Called at startup from sharehunter_web.py to honour --session/--latest.
+
+    Resolves once, here, at process startup — --latest picks whatever is
+    newest on disk right now, not "whatever is newest at any future point."
+    A session started after this process is already running won't appear
+    until it's picked from the browser's session dropdown (or the page/
+    process is restarted).
+    """
+    if latest:
+        s = sess.load_latest()
+    elif scan_id:
+        s = sess.load(scan_id)
+        if not s.get('scan_id'):
+            return None
+    else:
+        return None
+    with _view_state['lock']:
+        _view_state['session'] = s
+        _view_state['load_id'] = _view_state['load_id'] + 1
+    return s
 
 
 def start_gui(host='127.0.0.1', port=5005, debug=False):
