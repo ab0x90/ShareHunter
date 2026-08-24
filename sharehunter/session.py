@@ -41,6 +41,7 @@ def _default() -> dict:
             'password': '',
             'domain':   '',
             'nthash':   '',
+            'unauth':   False,
         },
         'scan_params': {},
         'hosts_total':     [],

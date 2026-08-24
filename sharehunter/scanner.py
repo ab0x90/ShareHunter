@@ -52,6 +52,19 @@ INTERESTING_SHARE_NAMES = re.compile(
 
 SKIP_SHARES = {'IPC$', 'print$', 'prnproc$'}
 
+# Tried via direct TreeConnect (conn.listPath) when a null session's
+# listShares() (NetShareEnum) comes back empty — common under
+# RestrictAnonymous, where enumeration is blocked but individual named
+# shares are still world-readable.
+COMMON_SHARE_NAMES = [
+    'NETLOGON', 'SYSVOL', 'Users', 'Public', 'Share', 'Shares', 'Data',
+    'Backup', 'Backups', 'Docs', 'Documents', 'Files', 'FileShare',
+    'Home', 'Profiles', 'Software', 'Apps', 'Install', 'Installs',
+    'Scripts', 'Source', 'Src', 'Temp', 'Transfer', 'Upload', 'Uploads',
+    'IT', 'Common', 'Company', 'Dept', 'Finance', 'HR', 'Scan', 'Scans',
+    'Print', 'Archive',
+]
+
 
 @dataclass
 class SnaffleResult:
@@ -141,6 +154,7 @@ class ShareHunter:
                  target: str = '', hosts: Optional[List[str]] = None,
                  domain: str = '', nthash: str = '',
                  use_kerberos: bool = False, aes_key: str = '', dc_ip: str = '',
+                 unauth: bool = False,
                  host_threads: int = 5, share_threads: int = 10,
                  max_depth: int = 10,
                  result_callback: Optional[Callable] = None,
@@ -152,6 +166,7 @@ class ShareHunter:
         self.password     = password
         self.domain       = domain
         self.nthash       = nthash
+        self.unauth        = unauth
         self.use_kerberos  = use_kerberos
         self.aes_key       = aes_key
         self.dc_ip         = dc_ip
@@ -232,11 +247,17 @@ class ShareHunter:
     def _connect(self, host: str) -> Optional[SMBConnection]:
         """
         Connect to *host* over SMB.  Auth preference order:
+          0. Null session (unauth=True) — anonymous SMB, no credentials
           1. Kerberos  (use_kerberos=True)
           2. NTLM + pass-the-hash
           3. NTLM + password
         """
         try:
+            if self.unauth:
+                conn = SMBConnection(host, host, sess_port=445, timeout=10)
+                conn.login('', '')  # null session
+                return conn
+
             if self.use_kerberos:
                 # remoteName drives the SPN (cifs/<fqdn>); remoteHost is the
                 # socket target, so we can still connect by the original IP.
@@ -274,7 +295,29 @@ class ShareHunter:
                 shares.append(name)
         except Exception as e:
             self.log(f"[!] listShares failed on {host}: {e}", 'error')
+
+        if self.unauth and not shares:
+            self.log(f"[*] {host}: NetShareEnum returned nothing under null session "
+                     f"— probing {len(COMMON_SHARE_NAMES)} common share names", 'info')
+            shares = self._probe_common_shares(conn, host)
+
         return shares
+
+    def _probe_common_shares(self, conn: SMBConnection, host: str) -> list:
+        """Direct-TreeConnect a wordlist of common share names. Used when
+        NetShareEnum is blocked (typical under RestrictAnonymous) but
+        individual named shares may still be world-readable."""
+        found = []
+        for name in COMMON_SHARE_NAMES:
+            if self._stop_event.is_set():
+                break
+            try:
+                conn.listPath(name, '\\*')
+                found.append(name)
+                self.log(f"[+] {host}: guessed share accessible — {name}", 'info')
+            except Exception:
+                continue
+        return found
 
     # ── File walker ────────────────────────────────────────────────────────
 
@@ -429,16 +472,25 @@ class ShareHunter:
         self.log("[ShareHunter] Scan complete.", 'info')
 
     def _resolve_targets(self) -> list:
-        """Expand CIDR, single IP, hostname, or file of targets."""
+        """Expand CIDR, single IP, hostname, or file of targets.
+
+        A file may mix plain IPs, hostnames, and CIDR ranges on separate
+        lines — each CIDR line is expanded to its individual hosts.
+        """
         import ipaddress
-        targets = []
         entry = self.target.strip()
 
         if os.path.isfile(entry):
+            targets = []
             with open(entry) as fh:
                 for line in fh:
                     line = line.strip()
-                    if line and not line.startswith('#'):
+                    if not line or line.startswith('#'):
+                        continue
+                    try:
+                        net = ipaddress.ip_network(line, strict=False)
+                        targets.extend(str(h) for h in net.hosts())
+                    except ValueError:
                         targets.append(line)
             return targets
 
@@ -451,6 +503,8 @@ class ShareHunter:
     def _scan_host(self, host: str):
         conn = self._connect(host)
         if not conn:
+            if self.session is not None:
+                sess.mark_host_done(self.session, host)
             return
 
         self.log(f"[+] Connected to {host}", 'info')

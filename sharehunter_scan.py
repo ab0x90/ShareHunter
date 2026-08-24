@@ -19,6 +19,10 @@ Usage:
 
   # Resume a previous scan's pending (incomplete) hosts
   python sharehunter_scan.py --resume 20260804_120000
+
+  # Unauthenticated (null session) share enumeration against a target file
+  # (one IP/hostname/CIDR range per line, # comments allowed)
+  python sharehunter_scan.py --unauth -t targets.txt
 """
 
 import argparse
@@ -234,7 +238,9 @@ def build_parser() -> argparse.ArgumentParser:
     target_group = parser.add_mutually_exclusive_group()
     target_group.add_argument(
         '-t', '--target',
-        help='Target: single IP, CIDR range, hostname, or path to a file of targets',
+        help='Target: single IP, CIDR range, hostname, or path to a file of '
+             'targets (one IP/hostname/CIDR range per line, # comments '
+             'allowed, CIDR lines expanded to individual hosts)',
     )
     target_group.add_argument(
         '--target-domain', metavar='DC',
@@ -255,6 +261,10 @@ def build_parser() -> argparse.ArgumentParser:
                              help='AES session key for Kerberos (hex). Implies --kerberos.')
     auth_group.add_argument('--dc-ip', default='', metavar='IP',
                              help='IP address of the Domain Controller.')
+    auth_group.add_argument('--unauth', action='store_true',
+                             help='Anonymous/null-session SMB enumeration — no username/password '
+                                  'required. Falls back to probing common share names when '
+                                  'NetShareEnum is blocked. Not compatible with --target-domain.')
 
     parser.add_argument('--host-threads',  type=int, default=5,  help='Concurrent hosts to scan')
     parser.add_argument('--share-threads', type=int, default=10, help='Concurrent shares per host')
@@ -297,19 +307,30 @@ def main():
     else:
         if not (args.target or args.target_domain):
             parser.error('one of -t/--target or --target-domain is required')
-        if not args.username:
-            parser.error('-u/--username is required')
-        if not (args.password or args.nthash or args.kerberos or args.aes_key):
-            parser.error('one of -p/--password, --nthash, --kerberos, or --aes-key is required')
+
+        if args.unauth:
+            if args.target_domain:
+                parser.error('--unauth cannot be used with --target-domain '
+                             '(LDAP computer enumeration requires authentication)')
+            if args.username or args.password or args.nthash or args.kerberos or args.aes_key:
+                console.print("[yellow]--unauth set — ignoring supplied credentials, "
+                              "using a null SMB session[/]")
+        else:
+            if not args.username:
+                parser.error('-u/--username is required (or use --unauth for anonymous enumeration)')
+            if not (args.password or args.nthash or args.kerberos or args.aes_key):
+                parser.error('one of -p/--password, --nthash, --kerberos, or --aes-key '
+                             'is required (or use --unauth)')
 
         creds = {
-            'username':     args.username,
-            'password':     args.password,
-            'domain':       args.domain,
-            'nthash':       args.nthash,
-            'use_kerberos': args.kerberos,
-            'aes_key':      args.aes_key,
+            'username':     '' if args.unauth else args.username,
+            'password':     '' if args.unauth else args.password,
+            'domain':       '' if args.unauth else args.domain,
+            'nthash':       '' if args.unauth else args.nthash,
+            'use_kerberos': False if args.unauth else args.kerberos,
+            'aes_key':      '' if args.unauth else args.aes_key,
             'dc_ip':        args.dc_ip,
+            'unauth':       args.unauth,
         }
 
         if args.target_domain:
@@ -335,6 +356,7 @@ def main():
         params = {
             'target':        args.target or '',
             'target_domain': args.target_domain or '',
+            'unauth':        args.unauth,
             'host_threads':  args.host_threads,
             'share_threads': args.share_threads,
             'depth':         args.depth,
@@ -355,9 +377,11 @@ def main():
     console.print(f"[*] Session:  {session['scan_id']}")
     console.print(f"[*] Loot dir: {session.get('loot_dir')}\n")
 
+    user_line = "(unauthenticated / null session)" if creds.get('unauth') \
+        else f"{creds.get('username', '')}@{creds.get('domain', '')}"
     header_lines = [
         f"Target:  {params.get('target') or params.get('target_domain', '')}",
-        f"User:    {creds.get('username', '')}@{creds.get('domain', '')}",
+        f"User:    {user_line}",
         f"Threads: host={params.get('host_threads')} share={params.get('share_threads')} depth={params.get('depth')}",
         f"Session: {session['scan_id']}",
     ]
@@ -373,7 +397,7 @@ def main():
         username=creds.get('username', ''), password=creds.get('password', ''),
         domain=creds.get('domain', ''), nthash=creds.get('nthash', ''),
         use_kerberos=creds.get('use_kerberos', False), aes_key=creds.get('aes_key', ''),
-        dc_ip=creds.get('dc_ip', ''),
+        dc_ip=creds.get('dc_ip', ''), unauth=creds.get('unauth', False),
         host_threads=params.get('host_threads', 5), share_threads=params.get('share_threads', 10),
         max_depth=params.get('depth', 10),
         result_callback=dashboard.result_callback,
