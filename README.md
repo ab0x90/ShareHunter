@@ -20,6 +20,7 @@ The two only ever talk to each other through the `sessions/`/`loot/`/`logs/` fol
 - **Domain enumeration** — enumerate all computer objects from a DC via LDAP/LDAPS; auto-falls back to LDAPS if plain LDAP is rejected
 - **Kerberos authentication** — full Kerberos support for both LDAP enumeration and SMB connections; obtains a TGT automatically from supplied credentials if no ccache exists
 - **Pass-the-hash** — authenticate with an NT hash instead of a password
+- **Unauthenticated (null-session) scanning** — `--unauth` skips credentials entirely; falls back to probing a built-in wordlist of common share names when anonymous `NetShareEnum` is blocked (typical under RestrictAnonymous) but individual named shares are still world-readable
 - **Session persistence + resume** — every scan writes a session file; `--resume <scan_id>` continues scanning any hosts left pending if the process was killed mid-scan
 - **In-browser file download** — download any finding directly from the SMB share to your loot directory with a single click
 - **Log viewer** — upload and parse any Snaffler or ShareHunter log file via the browser for offline review
@@ -45,7 +46,7 @@ A venv is recommended — `eventlet` (used by the web viewer) can conflict with 
 
 ## Scanning: `sharehunter_scan.py`
 
-Credentials are required — this tool only scans, it doesn't offer a "fill in the browser" flow.
+Credentials are required unless `--unauth` is used — this tool only scans, it doesn't offer a "fill in the browser" flow.
 
 ### Scan a single host or CIDR range
 
@@ -89,6 +90,22 @@ python3 sharehunter_scan.py --target-domain dc01.corp.local -u administrator -p 
 python3 sharehunter_scan.py -t 192.168.1.10 -u administrator --nthash aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0 -d CORP
 ```
 
+### Unauthenticated (null-session) scanning
+
+No credentials required — `-u`/`-p`/`-d` are ignored (and warned about) if supplied alongside `--unauth`. Not compatible with `--target-domain`, since LDAP computer enumeration itself requires authentication.
+
+```bash
+python3 sharehunter_scan.py --unauth -t 192.168.1.0/24
+```
+
+`-t` also accepts a file of targets — one IP, hostname, or CIDR range per line (`#` comments allowed), CIDR lines expanded to individual hosts:
+
+```bash
+python3 sharehunter_scan.py --unauth -t targets.txt
+```
+
+Anonymous `NetShareEnum` (share listing) is commonly blocked by RestrictAnonymous even when individual named shares are still accessible. When that happens, ShareHunter falls back to directly probing a built-in list of ~35 common share names (`NETLOGON`, `SYSVOL`, `Users`, `Backup`, `Data`, etc.) via TreeConnect.
+
 ### Resume an interrupted scan
 
 ```bash
@@ -105,10 +122,12 @@ python3 sharehunter_scan.py -t 192.168.1.10 -u administrator -p 'Password1' -d C
 
 ```
 targeting (one required):
-  -t, --target           Target: single IP, CIDR range, hostname, or path to a file of targets
+  -t, --target           Target: single IP, CIDR range, hostname, or path to a file of
+                          targets (one IP/hostname/CIDR range per line, # comments
+                          allowed, CIDR lines expanded to individual hosts)
       --target-domain    DC hostname/IP — enumerate all computer objects via LDAP then scan them
 
-credentials (username + one of password/nthash/kerberos/aes-key required):
+credentials (username + one of password/nthash/kerberos/aes-key required, unless --unauth):
   -u, --username         Username
   -p, --password         Password
   -d, --domain           Domain (NETBIOS or FQDN)
@@ -119,6 +138,9 @@ authentication / transport:
       --aes-key HEX      AES-128 or AES-256 session key (implies --kerberos)
       --dc-ip IP         Pin a specific DC IP for Kerberos / LDAP
       --ldaps            Force LDAPS (port 636); default: try plain LDAP, auto-fall back
+      --unauth           Anonymous/null-session SMB enumeration — no credentials required.
+                          Falls back to probing common share names when NetShareEnum is
+                          blocked. Not compatible with --target-domain.
 
 scan tuning:
       --host-threads     Concurrent hosts (default: 5)
