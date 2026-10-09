@@ -154,7 +154,7 @@ class ShareHunter:
                  target: str = '', hosts: Optional[List[str]] = None,
                  domain: str = '', nthash: str = '',
                  use_kerberos: bool = False, aes_key: str = '', dc_ip: str = '',
-                 unauth: bool = False,
+                 unauth: bool = False, relay: bool = False,
                  host_threads: int = 5, share_threads: int = 10,
                  max_depth: int = 10,
                  result_callback: Optional[Callable] = None,
@@ -167,11 +167,12 @@ class ShareHunter:
         self.domain       = domain
         self.nthash       = nthash
         self.unauth        = unauth
+        self.relay         = relay
         self.use_kerberos  = use_kerberos
         self.aes_key       = aes_key
         self.dc_ip         = dc_ip
-        self.host_threads  = host_threads
-        self.share_threads = share_threads
+        self.host_threads  = 1 if relay else host_threads
+        self.share_threads = 1 if relay else share_threads
         self.max_depth     = max_depth
         self.result_callback = result_callback or (lambda r: None)
         self.log_callback    = log_callback    or (lambda m, lvl='info': None)
@@ -335,8 +336,11 @@ class ShareHunter:
         try:
             listing = conn.listPath(share, path + '\\*')
         except SessionError as e:
+            if 'ACCESS_DENIED' not in str(e):
+                self.log(f"[!] listPath SessionError \\\\{host}\\{share}\\{path}: {e}", 'error')
             return
         except Exception as e:
+            self.log(f"[!] listPath Exception \\\\{host}\\{share}\\{path}: {e}", 'error')
             return
 
         for f in listing:
@@ -526,76 +530,91 @@ class ShareHunter:
 
         shares.sort(key=share_priority)
 
-        # Connection pool: reuse existing connections instead of opening one per
-        # share.  Pool size is capped at share_threads so we never open more
-        # connections than there are concurrent workers.
-        pool_size = min(self.share_threads, len(shares))
-        pool      = [conn]  # reuse the listing connection as the first slot
-        pool_lock = threading.Lock()
-
-        def _get_conn():
-            with pool_lock:
-                if pool:
-                    return pool.pop()
-            return self._connect(host)
-
-        def _return_conn(c):
-            if c is None:
-                return
-            with pool_lock:
-                if len(pool) < pool_size:
-                    pool.append(c)
-                    return
+        if self.relay:
+            # Relay mode: walk every share serially on the single
+            # pre-authenticated connection.  Never open a new session.
+            for share in shares:
+                if self._stop_event.is_set():
+                    break
+                try:
+                    self._walk_share(conn, host, share)
+                except Exception as e:
+                    self.log(f"[!] Error on \\\\{host}\\{share}: {e}", 'error')
             try:
-                c.logoff()
+                conn.logoff()
             except Exception:
                 pass
+        else:
+            # Connection pool: reuse existing connections instead of opening one per
+            # share.  Pool size is capped at share_threads so we never open more
+            # connections than there are concurrent workers.
+            pool_size = min(self.share_threads, len(shares))
+            pool      = [conn]  # reuse the listing connection as the first slot
+            pool_lock = threading.Lock()
 
-        def share_worker(share_name):
-            wconn = _get_conn()
-            if not wconn:
-                return
-            try:
-                self._walk_share(wconn, host, share_name)
-            except Exception as e:
-                self.log(f"[!] Error on \\\\{host}\\{share_name}: {e}", 'error')
+            def _get_conn():
+                with pool_lock:
+                    if pool:
+                        return pool.pop()
+                return self._connect(host)
+
+            def _return_conn(c):
+                if c is None:
+                    return
+                with pool_lock:
+                    if len(pool) < pool_size:
+                        pool.append(c)
+                        return
                 try:
-                    wconn.logoff()
+                    c.logoff()
                 except Exception:
                     pass
-                wconn = None
-            finally:
-                _return_conn(wconn)
 
-        share_sem = threading.Semaphore(self.share_threads)
+            def share_worker(share_name):
+                wconn = _get_conn()
+                if not wconn:
+                    return
+                try:
+                    self._walk_share(wconn, host, share_name)
+                except Exception as e:
+                    self.log(f"[!] Error on \\\\{host}\\{share_name}: {e}", 'error')
+                    try:
+                        wconn.logoff()
+                    except Exception:
+                        pass
+                    wconn = None
+                finally:
+                    _return_conn(wconn)
 
-        def bounded_share_worker(share_name):
-            try:
-                share_worker(share_name)
-            finally:
-                share_sem.release()
+            share_sem = threading.Semaphore(self.share_threads)
 
-        share_thread_list = []
-        for share in shares:
-            if self._stop_event.is_set():
-                break
-            share_sem.acquire()
-            t = threading.Thread(target=bounded_share_worker, args=(share,), daemon=True)
-            t.start()
-            share_thread_list.append(t)
+            def bounded_share_worker(share_name):
+                try:
+                    share_worker(share_name)
+                finally:
+                    share_sem.release()
 
-        for t in share_thread_list:
-            t.join()
+            share_thread_list = []
+            for share in shares:
+                if self._stop_event.is_set():
+                    break
+                share_sem.acquire()
+                t = threading.Thread(target=bounded_share_worker, args=(share,), daemon=True)
+                t.start()
+                share_thread_list.append(t)
 
-        # Drain and close any connections left in the pool
-        with pool_lock:
-            remaining = list(pool)
-            pool.clear()
-        for c in remaining:
-            try:
-                c.logoff()
-            except Exception:
-                pass
+            for t in share_thread_list:
+                t.join()
+
+            # Drain and close any connections left in the pool
+            with pool_lock:
+                remaining = list(pool)
+                pool.clear()
+            for c in remaining:
+                try:
+                    c.logoff()
+                except Exception:
+                    pass
 
         if self.session is not None:
             sess.mark_host_done(self.session, host)
