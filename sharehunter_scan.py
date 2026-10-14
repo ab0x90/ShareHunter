@@ -265,6 +265,10 @@ def build_parser() -> argparse.ArgumentParser:
                              help='Anonymous/null-session SMB enumeration — no username/password '
                                   'required. Falls back to probing common share names when '
                                   'NetShareEnum is blocked. Not compatible with --target-domain.')
+    auth_group.add_argument('--relay', action='store_true',
+                             help='ntlmrelayx SOCKS relay mode — use a single pre-authenticated '
+                                  'connection per host, walk shares serially, never open new sessions. '
+                                  'Forces --host-threads 1 --share-threads 1.')
 
     parser.add_argument('--host-threads',  type=int, default=5,  help='Concurrent hosts to scan')
     parser.add_argument('--share-threads', type=int, default=10, help='Concurrent shares per host')
@@ -308,14 +312,21 @@ def main():
         if not (args.target or args.target_domain):
             parser.error('one of -t/--target or --target-domain is required')
 
-        if args.unauth:
+        if args.relay:
+            if args.target_domain:
+                parser.error('--relay cannot be used with --target-domain')
+            args.host_threads = 1
+            args.share_threads = 1
+            console.print("[cyan]Relay mode — single connection per host, serial share walking[/]")
+        elif args.unauth:
             if args.target_domain:
                 parser.error('--unauth cannot be used with --target-domain '
                              '(LDAP computer enumeration requires authentication)')
             if args.username or args.password or args.nthash or args.kerberos or args.aes_key:
                 console.print("[yellow]--unauth set — ignoring supplied credentials, "
                               "using a null SMB session[/]")
-        else:
+
+        if not (args.unauth or args.relay):
             if not args.username:
                 parser.error('-u/--username is required (or use --unauth for anonymous enumeration)')
             if not (args.password or args.nthash or args.kerberos or args.aes_key):
@@ -357,6 +368,7 @@ def main():
             'target':        args.target or '',
             'target_domain': args.target_domain or '',
             'unauth':        args.unauth,
+            'relay':         args.relay,
             'host_threads':  args.host_threads,
             'share_threads': args.share_threads,
             'depth':         args.depth,
@@ -398,6 +410,7 @@ def main():
         domain=creds.get('domain', ''), nthash=creds.get('nthash', ''),
         use_kerberos=creds.get('use_kerberos', False), aes_key=creds.get('aes_key', ''),
         dc_ip=creds.get('dc_ip', ''), unauth=creds.get('unauth', False),
+        relay=params.get('relay', False),
         host_threads=params.get('host_threads', 5), share_threads=params.get('share_threads', 10),
         max_depth=params.get('depth', 10),
         result_callback=dashboard.result_callback,
